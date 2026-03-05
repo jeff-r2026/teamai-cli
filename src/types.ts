@@ -13,7 +13,7 @@ export const ToolPathsSchema = z.object({
 
 export const SharingConfigSchema = z.object({
   skills: z.object({
-    syncTargets: z.array(z.string()).default(['claude', 'codex', 'claude-internal', 'cursor']),
+    syncTargets: z.array(z.string()).default(['claude', 'codex', 'claude-internal', 'cursor', 'codebuddy']),
   }).default({}),
   rules: z.object({
     enforced: z.array(z.string()).default([]),
@@ -34,6 +34,7 @@ export const TeamaiConfigSchema = z.object({
     codex: { skills: '.codex/skills', rules: '.codex/rules' },
     'claude-internal': { skills: '.claude-internal/skills', rules: '.claude-internal/rules', settings: '.claude-internal/settings.json', claudemd: '.claude-internal/CLAUDE.md' },
     cursor: { skills: '.cursor/skills-cursor', rules: '.cursor/rules', settings: '.cursor/hooks.json' },
+    codebuddy: { skills: '.codebuddy/skills', rules: '.codebuddy/rules', settings: '.codebuddy/settings.json', claudemd: '.codebuddy/CLAUDE.md' },
   }),
 });
 

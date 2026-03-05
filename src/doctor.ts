@@ -1,8 +1,9 @@
 import path from 'node:path';
 import { loadLocalConfig, loadTeamConfig } from './config.js';
-import { pathExists } from './utils/fs.js';
+import { pathExists, readFileSafe } from './utils/fs.js';
 import { log } from './utils/logger.js';
 import type { GlobalOptions } from './types.js';
+import { TeamaiConfigSchema, type TeamaiConfig } from './types.js';
 
 interface Check {
   name: string;
@@ -10,9 +11,35 @@ interface Check {
   fix?: string;
 }
 
+function buildHookChecks(toolPaths: TeamaiConfig['toolPaths']): Check[] {
+  const checks: Check[] = [];
+  for (const [tool, paths] of Object.entries(toolPaths)) {
+    if (!paths.settings) continue;
+    checks.push({
+      name: `teamai hook in ${tool} settings`,
+      check: async () => {
+        const settingsPath = path.join(process.env.HOME ?? '', paths.settings!);
+        if (!await pathExists(settingsPath)) return false;
+        const content = await readFileSafe(settingsPath);
+        return content?.includes('[teamai]') ?? false;
+      },
+      fix: 'Run `teamai init` to inject hooks',
+    });
+  }
+  return checks;
+}
+
 export async function doctor(options: GlobalOptions): Promise<void> {
   log.info('Running diagnostics...\n');
   const localConfig = await loadLocalConfig();
+
+  // Try to load team config for dynamic tool paths
+  let teamConfig: TeamaiConfig | null = null;
+  if (localConfig) {
+    teamConfig = await loadTeamConfig(localConfig.repo.localPath);
+  }
+  // Fall back to schema defaults if team config is unavailable
+  const toolPaths = teamConfig?.toolPaths ?? TeamaiConfigSchema.shape.toolPaths.parse(undefined);
 
   const checks: Check[] = [
     {
@@ -42,17 +69,7 @@ export async function doctor(options: GlobalOptions): Promise<void> {
       },
       fix: 'Check teamai.yaml in team repo for syntax errors',
     },
-    {
-      name: 'teamai hook in claude settings',
-      check: async () => {
-        const settingsPath = path.join(process.env.HOME ?? '', '.claude', 'settings.json');
-        if (!await pathExists(settingsPath)) return false;
-        const { readFileSafe } = await import('./utils/fs.js');
-        const content = await readFileSafe(settingsPath);
-        return content?.includes('[teamai]') ?? false;
-      },
-      fix: 'Run `teamai init` to inject hooks',
-    },
+    ...buildHookChecks(toolPaths),
   ];
 
   let allPassed = true;

@@ -131,7 +131,7 @@ export async function init(options: GlobalOptions & { repo?: string }): Promise<
       description: 'Team AI DevKit shared resources',
       repo: repoUrl,
       sharing: {
-        skills: { syncTargets: ['claude', 'codex', 'claude-internal', 'cursor'] },
+        skills: { syncTargets: ['claude', 'codex', 'claude-internal', 'cursor', 'codebuddy'] },
         rules: { enforced: [] },
         docs: { localDir: '~/.teamai/docs' },
       },

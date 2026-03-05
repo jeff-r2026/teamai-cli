@@ -48,6 +48,40 @@ describe('MemberConfigSchema', () => {
   });
 });
 
+describe('TeamaiConfigSchema', () => {
+  it('should include codebuddy in default toolPaths', () => {
+    const result = TeamaiConfigSchema.parse({
+      team: 'test-team',
+      repo: 'https://git.woa.com/test/repo.git',
+    });
+    expect(result.toolPaths).toHaveProperty('codebuddy');
+    expect(result.toolPaths.codebuddy).toEqual({
+      skills: '.codebuddy/skills',
+      rules: '.codebuddy/rules',
+      settings: '.codebuddy/settings.json',
+      claudemd: '.codebuddy/CLAUDE.md',
+    });
+  });
+
+  it('should include codebuddy in default syncTargets', () => {
+    const result = TeamaiConfigSchema.parse({
+      team: 'test-team',
+      repo: 'https://git.woa.com/test/repo.git',
+    });
+    expect(result.sharing.skills.syncTargets).toContain('codebuddy');
+  });
+
+  it('should preserve all existing default tools in toolPaths', () => {
+    const result = TeamaiConfigSchema.parse({
+      team: 'test-team',
+      repo: 'https://git.woa.com/test/repo.git',
+    });
+    expect(Object.keys(result.toolPaths)).toEqual(
+      expect.arrayContaining(['claude', 'codex', 'claude-internal', 'cursor', 'codebuddy'])
+    );
+  });
+});
+
 describe('TeamaiConfigSchema reviewers', () => {
   const minConfig = {
     team: 'my-team',
