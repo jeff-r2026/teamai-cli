@@ -1,4 +1,5 @@
 import { execSync, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathExists, ensureDir } from './fs.js';
@@ -222,19 +223,29 @@ export function ensureAuthenticated(): string {
 // ─── Repo operations ─────────────────────────────────────
 
 /**
- * Retrieve the OAuth token that gf stored in the git credential helper.
- * We specify `username=oauth2` to distinguish the gf OAuth token from
- * any plain-text password the user may have stored in the keychain.
+ * Retrieve the OAuth token that gf stored in ~/.netrc.
+ *
+ * gf CLI uses the netrc-parser library to persist tokens.  The entry
+ * for git.woa.com looks like:
+ *   machine git.woa.com login <user> password <token> ...
+ *
+ * We parse the file directly instead of relying on `git credential fill`,
+ * which depends on a working git credential helper and may trigger
+ * interactive password prompts.
+ *
  * Returns null if no credential is found.
  */
 export function gfGetOAuthToken(): string | null {
   try {
-    const result = execSync(
-      'printf "protocol=https\\nhost=git.woa.com\\nusername=oauth2\\n" | git credential fill',
-      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 5_000 },
+    const netrcPath = path.join(os.homedir(), '.netrc');
+    if (!fs.existsSync(netrcPath)) return null;
+
+    const content = fs.readFileSync(netrcPath, 'utf-8');
+    // Match: machine git.woa.com ... password <TOKEN>
+    const match = content.match(
+      /machine\s+git\.woa\.com\s+.*?password\s+(\S+)/,
     );
-    const match = result.match(/^password=(.+)$/m);
-    return match?.[1]?.trim() ?? null;
+    return match?.[1] ?? null;
   } catch {
     return null;
   }

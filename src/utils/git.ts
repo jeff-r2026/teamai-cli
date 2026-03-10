@@ -7,11 +7,13 @@ import { log } from './logger.js';
 import { gfGetOAuthToken } from './gf-cli.js';
 
 /**
- * Create a SimpleGit instance with OAuth credential helper injected.
+ * Create a SimpleGit instance.
  *
- * gf repo clone embeds the OAuth token in the remote URL, but that token
- * expires. By injecting a credential helper that returns the current OAuth
- * token from the keychain, git operations keep working after token refresh.
+ * When a valid OAuth token is available from the gf credential store,
+ * injects a temporary credential-helper so that HTTPS remotes keep
+ * working even after the token embedded in the clone URL has expired.
+ * If no token is found the call falls back to plain simpleGit (SSH or
+ * cached credentials will still work).
  */
 export function createGit(basePath?: string): SimpleGit {
   const token = gfGetOAuthToken();

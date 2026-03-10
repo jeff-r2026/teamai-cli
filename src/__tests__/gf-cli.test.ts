@@ -1,5 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { execSync } from 'node:child_process';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../utils/logger.js', () => ({
   log: {
@@ -33,68 +32,66 @@ vi.mock('../utils/fs.js', () => ({
   ensureDir: vi.fn(),
 }));
 
-import { gfGetOAuthToken } from '../utils/gf-cli.js';
+const mockExistsSync = vi.fn();
+const mockReadFileSync = vi.fn();
+vi.mock('node:fs', () => ({
+  default: {
+    existsSync: (...args: unknown[]) => mockExistsSync(...args),
+    readFileSync: (...args: unknown[]) => mockReadFileSync(...args),
+  },
+}));
 
-const mockExecSync = vi.mocked(execSync);
+import { gfGetOAuthToken } from '../utils/gf-cli.js';
 
 describe('gfGetOAuthToken', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('should query git credential with username=oauth2', () => {
-    mockExecSync.mockReturnValue(
-      'protocol=https\nhost=git.woa.com\nusername=oauth2\npassword=my-oauth-token\n',
+  it('should read token from ~/.netrc for git.woa.com', () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      'machine git.woa.com login jeffyxu password myOAuthToken123 refresh abc123 authTokenType accessToken',
     );
 
     const token = gfGetOAuthToken();
-
-    expect(token).toBe('my-oauth-token');
-    expect(mockExecSync).toHaveBeenCalledWith(
-      expect.stringContaining('username=oauth2'),
-      expect.any(Object),
-    );
+    expect(token).toBe('myOAuthToken123');
   });
 
-  it('should NOT query credential without username (would return plain password)', () => {
-    mockExecSync.mockReturnValue(
-      'protocol=https\nhost=git.woa.com\nusername=oauth2\npassword=my-oauth-token\n',
-    );
+  it('should return null when ~/.netrc does not exist', () => {
+    mockExistsSync.mockReturnValue(false);
 
-    gfGetOAuthToken();
-
-    const cmd = mockExecSync.mock.calls[0][0] as string;
-    // The credential query must include username=oauth2 to avoid getting
-    // the user's plain password from keychain
-    expect(cmd).toMatch(/username=oauth2/);
-    // Should not have a bare query without username
-    expect(cmd).not.toMatch(/host=git\.woa\.com\\n"\s*\|/);
+    const token = gfGetOAuthToken();
+    expect(token).toBeNull();
   });
 
-  it('should return null when credential fill fails', () => {
-    mockExecSync.mockImplementation(() => {
-      throw new Error('credential fill failed');
+  it('should return null when ~/.netrc has no git.woa.com entry', () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      'machine github.com login user password ghp_xxx',
+    );
+
+    const token = gfGetOAuthToken();
+    expect(token).toBeNull();
+  });
+
+  it('should return null when reading ~/.netrc throws', () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockImplementation(() => {
+      throw new Error('permission denied');
     });
 
     const token = gfGetOAuthToken();
     expect(token).toBeNull();
   });
 
-  it('should return null when no password in output', () => {
-    mockExecSync.mockReturnValue(
-      'protocol=https\nhost=git.woa.com\nusername=oauth2\n',
+  it('should handle multiline netrc format', () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      'machine github.com login user password ghp_xxx\nmachine git.woa.com login alice password AliceToken456 refresh r456',
     );
 
     const token = gfGetOAuthToken();
-    expect(token).toBeNull();
-  });
-
-  it('should trim whitespace from token', () => {
-    mockExecSync.mockReturnValue(
-      'protocol=https\nhost=git.woa.com\nusername=oauth2\npassword=  token-with-spaces  \n',
-    );
-
-    const token = gfGetOAuthToken();
-    expect(token).toBe('token-with-spaces');
+    expect(token).toBe('AliceToken456');
   });
 });
