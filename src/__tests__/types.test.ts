@@ -79,8 +79,28 @@ describe('TeamaiConfigSchema', () => {
       repo: 'https://git.woa.com/test/repo.git',
     });
     expect(Object.keys(result.toolPaths)).toEqual(
-      expect.arrayContaining(['claude', 'codex', 'claude-internal', 'cursor', 'codebuddy'])
+      expect.arrayContaining(['claude', 'codex', 'claude-internal', 'cursor', 'codebuddy', 'openclaw'])
     );
+  });
+
+  it('should include openclaw in default toolPaths', () => {
+    const result = TeamaiConfigSchema.parse({
+      team: 'test-team',
+      repo: 'https://git.woa.com/test/repo.git',
+    });
+    expect(result.toolPaths).toHaveProperty('openclaw');
+    expect(result.toolPaths.openclaw).toEqual({
+      skills: '.openclaw/skills',
+      rules: '.openclaw/rules',
+    });
+  });
+
+  it('should include openclaw in default syncTargets', () => {
+    const result = TeamaiConfigSchema.parse({
+      team: 'test-team',
+      repo: 'https://git.woa.com/test/repo.git',
+    });
+    expect(result.sharing.skills.syncTargets).toContain('openclaw');
   });
 });
 
