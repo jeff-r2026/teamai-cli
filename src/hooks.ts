@@ -4,6 +4,8 @@ import { log } from './utils/logger.js';
 import { TEAMAI_HOOK_DESCRIPTION_PREFIX } from './types.js';
 
 const TEAMAI_PULL_COMMAND = 'bash -lc "teamai pull" 2>/dev/null || true';
+const TEAMAI_UPDATE_CHECK_COMMAND = 'bash -lc "teamai update --check" 2>/dev/null || true';
+const TEAMAI_TRACK_COMMAND = 'bash -lc \'teamai track "$CLAUDE_TOOL_NAME" "$CLAUDE_TOOL_INPUT"\' 2>/dev/null || true';
 
 // ─── Claude Code / Claude Internal format (settings.json) ───
 
@@ -29,6 +31,18 @@ const CLAUDE_SESSION_START_HOOK: HookMatcher = {
   description: `${TEAMAI_HOOK_DESCRIPTION_PREFIX} Auto-pull team resources on session start`,
 };
 
+const CLAUDE_STOP_HOOK: HookMatcher = {
+  matcher: '*',
+  hooks: [{ type: 'command', command: TEAMAI_UPDATE_CHECK_COMMAND }],
+  description: `${TEAMAI_HOOK_DESCRIPTION_PREFIX} Check for updates on session end`,
+};
+
+const CLAUDE_POST_TOOL_USE_HOOK: HookMatcher = {
+  matcher: 'Skill',
+  hooks: [{ type: 'command', command: TEAMAI_TRACK_COMMAND }],
+  description: `${TEAMAI_HOOK_DESCRIPTION_PREFIX} Track skill usage`,
+};
+
 // ─── Cursor format (hooks.json) ─────────────────────────────
 
 interface CursorHookEntry {
@@ -44,6 +58,11 @@ interface CursorHooksJson {
 const CURSOR_SESSION_START_HOOK: CursorHookEntry = {
   command: TEAMAI_PULL_COMMAND,
   timeout: 30,
+};
+
+const CURSOR_STOP_HOOK: CursorHookEntry = {
+  command: TEAMAI_UPDATE_CHECK_COMMAND,
+  timeout: 10,
 };
 
 // ─── Tool format detection ──────────────────────────────────
@@ -78,15 +97,92 @@ async function injectClaudeHooks(settingsPath: string): Promise<void> {
     const currentCmd = existing.hooks?.[0]?.command;
     if (currentCmd !== TEAMAI_PULL_COMMAND) {
       existing.hooks = CLAUDE_SESSION_START_HOOK.hooks;
-      await writeJson(expanded, settings);
-      log.success(`Updated teamai hook in ${settingsPath}`);
-    } else {
-      log.debug(`teamai hook already exists in ${settingsPath}`);
     }
+
+    // Ensure Stop hook for update check exists
+    if (!settings.hooks.Stop) {
+      settings.hooks.Stop = [];
+    }
+    const existingStop = settings.hooks.Stop.find(
+      (h) => h.description?.startsWith(TEAMAI_HOOK_DESCRIPTION_PREFIX) && h.hooks?.[0]?.command?.includes('teamai update')
+    );
+    if (!existingStop) {
+      settings.hooks.Stop.push(CLAUDE_STOP_HOOK);
+      await writeJson(expanded, settings);
+      log.success(`Injected teamai update hook into ${settingsPath}`);
+    } else {
+      const currentStopCmd = existingStop.hooks?.[0]?.command;
+      if (currentStopCmd !== TEAMAI_UPDATE_CHECK_COMMAND) {
+        existingStop.hooks = CLAUDE_STOP_HOOK.hooks;
+        await writeJson(expanded, settings);
+        log.success(`Updated teamai update hook in ${settingsPath}`);
+      } else if (currentCmd !== TEAMAI_PULL_COMMAND) {
+        await writeJson(expanded, settings);
+        log.success(`Updated teamai hook in ${settingsPath}`);
+      } else {
+        log.debug(`teamai hooks already exist in ${settingsPath}`);
+      }
+    }
+
+    // Ensure PostToolUse hook for skill usage tracking exists
+    if (!settings.hooks.PostToolUse) {
+      settings.hooks.PostToolUse = [];
+    }
+    const existingTrackInner = settings.hooks.PostToolUse.find(
+      (h) => h.description?.startsWith(TEAMAI_HOOK_DESCRIPTION_PREFIX) && h.description?.includes('Track skill')
+    );
+    if (!existingTrackInner) {
+      settings.hooks.PostToolUse.push(CLAUDE_POST_TOOL_USE_HOOK);
+      await writeJson(expanded, settings);
+      log.success(`Injected teamai track hook into ${settingsPath}`);
+    } else {
+      const currentTrackCmd = existingTrackInner.hooks?.[0]?.command;
+      if (currentTrackCmd !== TEAMAI_TRACK_COMMAND) {
+        existingTrackInner.hooks = CLAUDE_POST_TOOL_USE_HOOK.hooks;
+        existingTrackInner.matcher = CLAUDE_POST_TOOL_USE_HOOK.matcher;
+        await writeJson(expanded, settings);
+        log.success(`Updated teamai track hook in ${settingsPath}`);
+      }
+    }
+
     return;
   }
 
   settings.hooks.SessionStart.push(CLAUDE_SESSION_START_HOOK);
+
+  // Inject Stop hook for update check
+  if (!settings.hooks.Stop) {
+    settings.hooks.Stop = [];
+  }
+  const existingStop = settings.hooks.Stop.find(
+    (h) => h.description?.startsWith(TEAMAI_HOOK_DESCRIPTION_PREFIX) && h.hooks?.[0]?.command?.includes('teamai update')
+  );
+  if (!existingStop) {
+    settings.hooks.Stop.push(CLAUDE_STOP_HOOK);
+  } else {
+    const currentStopCmd = existingStop.hooks?.[0]?.command;
+    if (currentStopCmd !== TEAMAI_UPDATE_CHECK_COMMAND) {
+      existingStop.hooks = CLAUDE_STOP_HOOK.hooks;
+    }
+  }
+
+  // Inject PostToolUse hook for skill usage tracking
+  if (!settings.hooks.PostToolUse) {
+    settings.hooks.PostToolUse = [];
+  }
+  const existingTrack = settings.hooks.PostToolUse.find(
+    (h) => h.description?.startsWith(TEAMAI_HOOK_DESCRIPTION_PREFIX) && h.description?.includes('Track skill')
+  );
+  if (!existingTrack) {
+    settings.hooks.PostToolUse.push(CLAUDE_POST_TOOL_USE_HOOK);
+  } else {
+    const currentTrackCmd = existingTrack.hooks?.[0]?.command;
+    if (currentTrackCmd !== TEAMAI_TRACK_COMMAND) {
+      existingTrack.hooks = CLAUDE_POST_TOOL_USE_HOOK.hooks;
+      existingTrack.matcher = CLAUDE_POST_TOOL_USE_HOOK.matcher;
+    }
+  }
+
   await writeJson(expanded, settings);
   log.success(`Injected teamai hook into ${settingsPath}`);
 }
@@ -141,15 +237,47 @@ async function injectCursorHooks(hooksPath: string): Promise<void> {
     const existing = hooksJson.hooks.sessionStart[existingIdx];
     if (existing.command !== TEAMAI_PULL_COMMAND) {
       hooksJson.hooks.sessionStart[existingIdx] = CURSOR_SESSION_START_HOOK;
+    }
+
+    // Ensure stop hook for update check exists
+    if (!hooksJson.hooks.stop) {
+      hooksJson.hooks.stop = [];
+    }
+    const existingStopIdx = hooksJson.hooks.stop.findIndex(
+      (h) => h.command.includes('teamai update')
+    );
+    if (existingStopIdx < 0) {
+      hooksJson.hooks.stop.push(CURSOR_STOP_HOOK);
+      await writeJson(expanded, hooksJson);
+      log.success(`Injected teamai update hook into ${hooksPath}`);
+    } else if (hooksJson.hooks.stop[existingStopIdx].command !== TEAMAI_UPDATE_CHECK_COMMAND) {
+      hooksJson.hooks.stop[existingStopIdx] = CURSOR_STOP_HOOK;
+      await writeJson(expanded, hooksJson);
+      log.success(`Updated teamai update hook in ${hooksPath}`);
+    } else if (existing.command !== TEAMAI_PULL_COMMAND) {
       await writeJson(expanded, hooksJson);
       log.success(`Updated teamai hook in ${hooksPath}`);
     } else {
-      log.debug(`teamai hook already exists in ${hooksPath}`);
+      log.debug(`teamai hooks already exist in ${hooksPath}`);
     }
     return;
   }
 
   hooksJson.hooks.sessionStart.push(CURSOR_SESSION_START_HOOK);
+
+  // Inject stop hook for update check
+  if (!hooksJson.hooks.stop) {
+    hooksJson.hooks.stop = [];
+  }
+  const existingStopIdx = hooksJson.hooks.stop.findIndex(
+    (h) => h.command.includes('teamai update')
+  );
+  if (existingStopIdx < 0) {
+    hooksJson.hooks.stop.push(CURSOR_STOP_HOOK);
+  } else if (hooksJson.hooks.stop[existingStopIdx].command !== TEAMAI_UPDATE_CHECK_COMMAND) {
+    hooksJson.hooks.stop[existingStopIdx] = CURSOR_STOP_HOOK;
+  }
+
   await writeJson(expanded, hooksJson);
   log.success(`Injected teamai hook into ${hooksPath}`);
 }
@@ -161,7 +289,9 @@ async function removeCursorHooks(hooksPath: string): Promise<void> {
 
   let changed = false;
   for (const [event, entries] of Object.entries(hooksJson.hooks)) {
-    const filtered = entries.filter((h) => h.command !== TEAMAI_PULL_COMMAND);
+    const filtered = entries.filter(
+      (h) => !h.command.includes('teamai pull') && !h.command.includes('teamai update')
+    );
     if (filtered.length !== entries.length) {
       hooksJson.hooks[event] = filtered;
       changed = true;

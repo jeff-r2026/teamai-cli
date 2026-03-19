@@ -4,6 +4,7 @@ import {
   TeamaiConfigSchema,
   SharingConfigSchema,
   StateSchema,
+  LocalConfigSchema,
 } from '../types.js';
 
 describe('MemberConfigSchema', () => {
@@ -172,5 +173,49 @@ describe('StateSchema pushedEnvVars', () => {
       pushedEnvVars: ['API_URL', 'TOKEN'],
     });
     expect(result.pushedEnvVars).toEqual(['API_URL', 'TOKEN']);
+  });
+});
+
+describe('StateSchema update fields', () => {
+  it('should default lastUpdateCheck to null', () => {
+    const result = StateSchema.parse({});
+    expect(result.lastUpdateCheck).toBeNull();
+  });
+
+  it('should default availableUpdate to null', () => {
+    const result = StateSchema.parse({});
+    expect(result.availableUpdate).toBeNull();
+  });
+
+  it('should accept explicit update fields', () => {
+    const result = StateSchema.parse({
+      lastUpdateCheck: '2025-03-19T00:00:00.000Z',
+      availableUpdate: '0.4.0',
+    });
+    expect(result.lastUpdateCheck).toBe('2025-03-19T00:00:00.000Z');
+    expect(result.availableUpdate).toBe('0.4.0');
+  });
+});
+
+describe('LocalConfigSchema updatePolicy', () => {
+  const baseConfig = {
+    repo: { localPath: '/tmp/repo', remote: 'https://git.woa.com/team/repo.git' },
+    username: 'test',
+  };
+
+  it('should default updatePolicy to auto', () => {
+    const result = LocalConfigSchema.parse(baseConfig);
+    expect(result.updatePolicy).toBe('auto');
+  });
+
+  it('should accept auto, prompt, and skip values', () => {
+    for (const policy of ['auto', 'prompt', 'skip'] as const) {
+      const result = LocalConfigSchema.parse({ ...baseConfig, updatePolicy: policy });
+      expect(result.updatePolicy).toBe(policy);
+    }
+  });
+
+  it('should reject invalid updatePolicy values', () => {
+    expect(() => LocalConfigSchema.parse({ ...baseConfig, updatePolicy: 'invalid' })).toThrow();
   });
 });

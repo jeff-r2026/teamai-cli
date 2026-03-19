@@ -105,6 +105,16 @@ program
     await doctor(globalOpts);
   });
 
+program
+  .command('update')
+  .description('Check for updates and upgrade teamai CLI')
+  .option('--check', 'Check only, do not install (used by hooks)')
+  .action(async (cmdOpts) => {
+    const globalOpts = program.opts() as GlobalOptions;
+    const { update } = await import('./update.js');
+    await update({ ...globalOpts, ...cmdOpts });
+  });
+
 const envCmd = program
   .command('env')
   .description('Manage team environment variables')
@@ -141,6 +151,42 @@ envCmd
     const globalOpts = program.opts() as GlobalOptions;
     const { envRemove } = await import('./env-commands.js');
     await envRemove(key, globalOpts);
+  });
+
+// ─── Usage tracking commands ────────────────────────────
+
+program
+  .command('track <toolName> [toolInput]')
+  .description('Track a tool usage event (called by PostToolUse hook)')
+  .action(async (toolName, toolInput) => {
+    const { track } = await import('./usage-tracker.js');
+    await track(toolName, toolInput ?? '{}');
+  });
+
+program
+  .command('stats')
+  .description('Show local skill usage statistics')
+  .action(async () => {
+    const { showStats } = await import('./stats.js');
+    await showStats();
+  });
+
+program
+  .command('save-session')
+  .description('Save current session tool usage summary')
+  .option('--summary <text>', 'Session summary text')
+  .action(async (cmdOpts) => {
+    const { saveSession } = await import('./session-collector.js');
+    await saveSession(cmdOpts.summary);
+  });
+
+program
+  .command('digest')
+  .description('Generate weekly team activity digest')
+  .action(async () => {
+    const globalOpts = program.opts() as GlobalOptions;
+    const { generateDigest } = await import('./digest.js');
+    await generateDigest(globalOpts);
   });
 
 program.parse();

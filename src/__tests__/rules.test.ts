@@ -74,6 +74,7 @@ describe('RulesHandler.scanLocalForPush — modified rule detection', () => {
     localConfig = {
       repo: { localPath: repoPath, remote: 'https://git.woa.com/test/repo.git' },
       username: 'testuser',
+      updatePolicy: 'auto',
     };
   });
 
@@ -255,6 +256,7 @@ describe('RulesHandler.scanLocalForPush — subdirectory support', () => {
     localConfig = {
       repo: { localPath: repoPath, remote: 'https://git.woa.com/test/repo.git' },
       username: 'testuser',
+      updatePolicy: 'auto',
     };
   });
 
@@ -363,6 +365,7 @@ describe('RulesHandler.scanTeamForPull — subdirectory support', () => {
     localConfig = {
       repo: { localPath: repoPath, remote: 'https://git.woa.com/test/repo.git' },
       username: 'testuser',
+      updatePolicy: 'auto',
     };
   });
 

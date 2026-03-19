@@ -208,4 +208,41 @@ export async function pull(options: GlobalOptions): Promise<void> {
     state.lastPull = new Date().toISOString();
     await saveState(state);
   }
+
+  // Step 4: Auto-report usage data to team repo (best-effort, non-blocking)
+  if (!options.dryRun) {
+    try {
+      const { reportUsageToTeam } = await import('./team-push.js');
+      await reportUsageToTeam(localConfig.repo.localPath, localConfig.username);
+    } catch (e) {
+      log.debug(`Auto-report skipped: ${(e as Error).message}`);
+    }
+  }
+
+  // Step 5: Show skill recommendations (if team stats available)
+  if (!options.silent && !options.dryRun) {
+    try {
+      const YAML = (await import('yaml')).default;
+      const { listFiles, readFileSafe } = await import('./utils/fs.js');
+      const { getRecommendations, displayRecommendations } = await import('./skill-recommend.js');
+      const statsDir = path.join(localConfig.repo.localPath, 'stats');
+      const files = await listFiles(statsDir);
+      const teamStats = [];
+      for (const file of files) {
+        if (!file.endsWith('.yaml')) continue;
+        const content = await readFileSafe(path.join(statsDir, file));
+        if (!content) continue;
+        try {
+          const parsed = YAML.parse(content);
+          if (parsed?.username && parsed?.skills) teamStats.push(parsed);
+        } catch { /* skip */ }
+      }
+      if (teamStats.length > 0) {
+        const recs = await getRecommendations(teamStats);
+        displayRecommendations(recs);
+      }
+    } catch {
+      // Recommendations are optional — don't fail pull
+    }
+  }
 }

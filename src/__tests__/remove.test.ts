@@ -84,6 +84,7 @@ describe('RulesHandler.removeItem', () => {
     localConfig = {
       repo: { localPath: repoPath, remote: 'https://git.woa.com/test/repo.git' },
       username: 'testuser',
+      updatePolicy: 'auto',
     };
   });
 
@@ -180,6 +181,7 @@ describe('SkillsHandler.removeItem', () => {
     localConfig = {
       repo: { localPath: repoPath, remote: 'https://git.woa.com/test/repo.git' },
       username: 'testuser',
+      updatePolicy: 'auto',
     };
   });
 
@@ -275,6 +277,7 @@ describe('Tombstone mechanism', () => {
       localConfig = {
         repo: { localPath: repoPath, remote: 'https://git.woa.com/test/repo.git' },
         username: 'testuser',
+        updatePolicy: 'auto',
       };
     });
 
@@ -392,6 +395,7 @@ describe('Tombstone mechanism', () => {
       localConfig = {
         repo: { localPath: repoPath, remote: 'https://git.woa.com/test/repo.git' },
         username: 'testuser',
+        updatePolicy: 'auto',
       };
     });
 
@@ -445,6 +449,7 @@ describe('Tombstone mechanism', () => {
       localConfig = {
         repo: { localPath: tmpDir, remote: '' },
         username: 'testuser',
+        updatePolicy: 'auto',
       };
     });
 
@@ -516,6 +521,7 @@ describe('Tombstone mechanism', () => {
       localConfig = {
         repo: { localPath: repoPath, remote: 'https://git.woa.com/test/repo.git' },
         username: 'testuser',
+        updatePolicy: 'auto',
       };
     });
 
@@ -586,6 +592,7 @@ describe('Tombstone mechanism', () => {
       const localConfig: LocalConfig = {
         repo: { localPath: path.join(tmpDir, 'team-repo'), remote: '' },
         username: 'testuser',
+        updatePolicy: 'auto',
       };
       const teamConfig: TeamaiConfig = {
         team: 'test', description: '', repo: '',
@@ -605,6 +612,7 @@ describe('Tombstone mechanism', () => {
       const localConfig: LocalConfig = {
         repo: { localPath: path.join(tmpDir, 'team-repo'), remote: '' },
         username: 'testuser',
+        updatePolicy: 'auto',
       };
       const teamConfig: TeamaiConfig = {
         team: 'test', description: '', repo: '',
@@ -648,6 +656,7 @@ describe('Tombstone mechanism', () => {
       const localConfig: LocalConfig = {
         repo: { localPath: repoPath, remote: '' },
         username: 'testuser',
+        updatePolicy: 'auto',
       };
 
       const handler = new RulesHandler();
@@ -682,6 +691,7 @@ describe('Tombstone mechanism', () => {
       const localConfig: LocalConfig = {
         repo: { localPath: repoPath, remote: '' },
         username: 'testuser',
+        updatePolicy: 'auto',
       };
 
       const handler = new SkillsHandler();
@@ -731,6 +741,7 @@ describe('Tombstone mechanism', () => {
       const localConfig: LocalConfig = {
         repo: { localPath: repoPath, remote: '' },
         username: 'testuser',
+        updatePolicy: 'auto',
       };
 
       const handler = new RulesHandler();
@@ -761,6 +772,7 @@ describe('Tombstone mechanism', () => {
       const localConfig: LocalConfig = {
         repo: { localPath: repoPath, remote: '' },
         username: 'testuser',
+        updatePolicy: 'auto',
       };
 
       const handler = new SkillsHandler();

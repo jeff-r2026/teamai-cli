@@ -68,6 +68,7 @@ describe('env-commands', () => {
     localConfig = {
       repo: { localPath: repoPath, remote: 'https://git.woa.com/test/repo.git' },
       username: 'testuser',
+      updatePolicy: 'auto',
     };
 
     vi.mocked(requireInit).mockResolvedValue({ localConfig, teamConfig });

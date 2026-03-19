@@ -227,6 +227,7 @@ export async function init(options: GlobalOptions & { repo?: string }): Promise<
   const localConfig: LocalConfig = {
     repo: { localPath, remote: repoInfo.httpsUrl },
     username,
+    updatePolicy: 'auto',
   };
   await ensureDir(TEAMAI_HOME);
   await saveLocalConfig(localConfig);
