@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.4.0] - 2026-03-19
+
+### Added
+- **Skill Usage Tracking**: PostToolUse hook 自动追踪 Skill 工具调用，写入 `~/.teamai/usage.jsonl`
+  - `teamai track <toolName> [toolInput]` — hook 调用的底层命令，自带 skill name 校验（防 path traversal）
+  - `teamai stats` — 查看本地 skill 使用统计（次数 + 最近使用时间）
+  - `teamai init` 自动注入 PostToolUse hook 到 Claude Code / Claude Internal / CodeBuddy 的 settings.json
+- **团队 Usage 自动上报**: `teamai pull` 时自动聚合本地 usage 数据为 `stats/<user>.yaml` 并 git push 到团队仓库
+  - Best-effort 策略，5s 超时，失败不阻塞 session 启动
+  - 上报成功后自动截断本地 JSONL，文件永远很小
+- **Skill Health Score**: 两维评分 = usage(0-60) + freshness(0-40)，0-100 分显示为 ★★★★★
+- **Skill 推荐**: `teamai pull` 后自动推荐团队热门但用户未使用的 skill
+- **Session 记录**: `teamai save-session [--summary "..."]` 收集会话工具使用记录并评估价值
+  - 有价值（含错误/重试/踩坑）的 session 标记为可推送
+  - 按月聚合存储到 `~/.teamai/sessions/<year-month>.md`
+- **团队周报**: `teamai digest` 生成团队 AI 工具使用周报（最热 skill、活跃成员、session 摘要）
+- 新增设计文档 `docs/designs/team-intelligence-platform.md`
+- 新增 `TODOS.md` 记录延迟工作项
+
+### New CLI Commands
+| Command | Description |
+|---------|-------------|
+| `teamai track` | 追踪工具使用（PostToolUse hook 调用） |
+| `teamai stats` | 查看本地 skill 使用统计 |
+| `teamai save-session` | 保存会话工具使用摘要 |
+| `teamai digest` | 生成团队周报 |
+
+### For Existing Users
+存量用户需重新运行 `teamai init` 以注入 PostToolUse hook。
+
 ## [0.3.14] - 2026-03-19
 
 ### Added
