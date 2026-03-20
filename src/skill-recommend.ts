@@ -1,4 +1,4 @@
-import { readUsageEvents } from './usage-tracker.js';
+import { readKnownSkills } from './usage-tracker.js';
 import type { UserStats } from './types.js';
 
 // ─── Skill Recommendations ─────────────────────────────
@@ -7,14 +7,10 @@ import type { UserStats } from './types.js';
 //  1. Are popular with the team (used by many members)
 //  2. The current user hasn't tried yet
 //
-
-/**
- * Get skills the current user has used (from local JSONL).
- */
-async function getUserSkills(): Promise<Set<string>> {
-  const events = await readUsageEvents();
-  return new Set(events.map((e) => e.skill));
-}
+//  User's skill history is read from two sources:
+//  - usage.jsonl (unreported events since last truncation)
+//  - known-skills.json (persisted history that survives truncation)
+//
 
 /**
  * Calculate skill popularity from team stats.
@@ -52,7 +48,7 @@ export async function getRecommendations(
 ): Promise<Array<{ skill: string; percentage: number; reason: string }>> {
   if (teamStats.length === 0) return [];
 
-  const userSkills = await getUserSkills();
+  const userSkills = await readKnownSkills();
   const popularity = getTeamSkillPopularity(teamStats);
 
   const recommendations: Array<{ skill: string; percentage: number; reason: string }> = [];

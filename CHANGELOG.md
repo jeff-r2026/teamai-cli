@@ -2,6 +2,21 @@
 
 # Changelog
 
+## [0.4.2] - 2026-03-20
+
+### Fixed
+- **Skill 使用追踪完全失效**：PostToolUse hook 通过环境变量 (`$CLAUDE_TOOL_NAME`) 读取数据，但 Claude Code 实际通过 STDIN JSON 传递。hook 每次收到空参数，从未记录任何真实 skill 使用事件
+  - 新增 `teamai track --stdin` 模式，从 STDIN 读取 Claude Code hook JSON 并解析 `tool_name`/`tool_input`
+  - Hook 命令从 `'teamai track "$CLAUDE_TOOL_NAME" ...'` 改为 `'teamai track --stdin'`
+  - 旧 CLI 参数方式仍兼容，支持手动测试
+- **Skill 推荐始终显示 "you haven't tried it"**：`usage.jsonl` 上报到团队仓库后被 truncate 清空，但推荐引擎只读 `usage.jsonl`，丢失全部历史数据
+  - 新增 `~/.teamai/known-skills.json` 持久化已用 skill 集合，不受 truncate 影响
+  - 推荐引擎合并 `usage.jsonl`（未上报事件）+ `known-skills.json`（历史记录）两个数据源
+- Hook 错误不再静默丢弃：stderr 从 `/dev/null` 改为追加到 `~/.teamai/debug.log`，方便排查
+
+### For Existing Users
+存量用户下次 `teamai pull` 时 hook 会自动升级为 `--stdin` 模式，无需手动操作。
+
 ## [0.4.1] - 2026-03-20
 
 ### Fixed

@@ -3,40 +3,53 @@ import path from 'node:path';
 import { log } from './utils/logger.js';
 import {
   SKILL_NAME_REGEX,
-  TEAMAI_SESSIONS_DIR,
   type UsageEvent,
 } from './types.js';
-import { ensureDir } from './utils/fs.js';
+import { ensureDir, readJson, writeJson } from './utils/fs.js';
 
 /** Get the usage JSONL path (evaluated at call time to respect HOME changes in tests). */
 function getUsagePath(): string {
   return path.join(process.env.HOME ?? '', '.teamai', 'usage.jsonl');
 }
 
+/** Get the known-skills.json path (evaluated at call time to respect HOME changes in tests). */
+function getKnownSkillsPath(): string {
+  return path.join(process.env.HOME ?? '', '.teamai', 'known-skills.json');
+}
+
 // ─── Data flow ─────────────────────────────────────────
 //
-//  PostToolUse hook
+//  PostToolUse hook (Claude Code)
 //      │
 //      ▼
-//  teamai track $CLAUDE_TOOL_NAME $CLAUDE_TOOL_INPUT
+//  STDIN → JSON { tool_name, tool_input, ... }
 //      │
 //      ▼
-//  [tool == "Skill"?] ──No──▶ exit(0)
+//  teamai track --stdin
+//      │
+//      ▼
+//  [read STDIN JSON]
+//      │
+//      ▼
+//  [tool_name == "Skill"?] ──No──▶ exit(0)
 //      │Yes
 //      ▼
-//  [extract & validate skill name]
+//  [extract & validate skill name from tool_input]
 //      │
 //      ▼
 //  appendFile(usage.jsonl, JSON line)
+//      │
+//      ▼
+//  updateKnownSkills(skill) → known-skills.json
 //
 
 /**
- * Extract skill name from the Skill tool's JSON input.
- * Claude Code passes the tool input as a JSON string with a `skill` field.
+ * Extract skill name from the Skill tool's input.
+ * Accepts either a JSON string or a parsed object.
  */
-function extractSkillName(toolInput: string): string | null {
+function extractSkillName(toolInput: string | Record<string, unknown>): string | null {
   try {
-    const parsed = JSON.parse(toolInput);
+    const parsed = typeof toolInput === 'string' ? JSON.parse(toolInput) : toolInput;
     const skill = parsed?.skill ?? parsed?.name ?? null;
     if (typeof skill !== 'string') return null;
     // The skill field may contain a qualified name like "pkg:skill-name"
@@ -119,8 +132,69 @@ export async function truncateUsageAfterReport(reportedCount: number): Promise<v
 }
 
 /**
+ * Add a skill to the known-skills set (persisted across truncations).
+ * Silently fails on I/O errors to avoid disrupting the AI coding session.
+ */
+export async function updateKnownSkills(skillName: string): Promise<void> {
+  try {
+    const knownPath = getKnownSkillsPath();
+    const existing = await readJson<string[]>(knownPath);
+    const skills = new Set(Array.isArray(existing) ? existing : []);
+    if (skills.has(skillName)) return; // already known
+    skills.add(skillName);
+    await writeJson(knownPath, Array.from(skills).sort());
+    log.debug(`Added ${skillName} to known-skills.json`);
+  } catch (e) {
+    log.debug(`Failed to update known-skills: ${(e as Error).message}`);
+  }
+}
+
+/**
+ * Read the set of skills the current user has ever used.
+ * Merges local usage.jsonl (unreported events) with known-skills.json (persisted history).
+ */
+export async function readKnownSkills(): Promise<Set<string>> {
+  const skills = new Set<string>();
+
+  // Source 1: local usage.jsonl (unreported events since last truncation)
+  const events = await readUsageEvents();
+  for (const event of events) {
+    skills.add(event.skill);
+  }
+
+  // Source 2: known-skills.json (survives truncation)
+  try {
+    const known = await readJson<string[]>(getKnownSkillsPath());
+    if (Array.isArray(known)) {
+      for (const name of known) {
+        if (typeof name === 'string') skills.add(name);
+      }
+    }
+  } catch {
+    // known-skills.json missing or corrupted — use only JSONL data
+  }
+
+  return skills;
+}
+
+/**
+ * Read STDIN fully and return its content as a string.
+ * Returns empty string if STDIN is not a pipe or is empty.
+ */
+async function readStdin(): Promise<string> {
+  // If STDIN is a TTY (interactive), don't block waiting for input
+  if (process.stdin.isTTY) return '';
+
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(chunk as Buffer);
+  }
+  return Buffer.concat(chunks).toString('utf-8');
+}
+
+/**
  * Handle the `teamai track` CLI command.
- * Called by PostToolUse hook with environment variables.
+ * Called by PostToolUse hook with CLI args (legacy) or STDIN JSON (current).
  */
 export async function track(toolName: string, toolInput: string): Promise<void> {
   // Only track Skill tool calls
@@ -146,4 +220,59 @@ export async function track(toolName: string, toolInput: string): Promise<void> 
   };
 
   await appendUsageEvent(event);
+  await updateKnownSkills(skillName);
+}
+
+/**
+ * Handle the `teamai track --stdin` mode.
+ * Reads Claude Code hook JSON from STDIN and extracts tool usage info.
+ *
+ * STDIN JSON format (Claude Code PostToolUse):
+ *   { tool_name: string, tool_input: object, tool_output?: string, ... }
+ */
+export async function trackFromStdin(): Promise<void> {
+  const raw = await readStdin();
+  if (!raw.trim()) {
+    log.debug('No STDIN data received');
+    return;
+  }
+
+  let hookData: { tool_name?: string; tool_input?: Record<string, unknown> };
+  try {
+    hookData = JSON.parse(raw);
+  } catch {
+    log.debug('Failed to parse STDIN JSON');
+    return;
+  }
+
+  const toolName = hookData.tool_name;
+  if (typeof toolName !== 'string' || toolName !== 'Skill') {
+    return;
+  }
+
+  const toolInput = hookData.tool_input;
+  if (!toolInput || typeof toolInput !== 'object') {
+    log.debug('Missing or invalid tool_input in STDIN JSON');
+    return;
+  }
+
+  const skillName = extractSkillName(toolInput);
+  if (!skillName) {
+    log.debug('Could not extract skill name from STDIN tool_input');
+    return;
+  }
+
+  if (!isValidSkillName(skillName)) {
+    log.debug(`Invalid skill name rejected: ${skillName.slice(0, 50)}`);
+    return;
+  }
+
+  const event: UsageEvent = {
+    skill: skillName,
+    timestamp: new Date().toISOString(),
+    tool: 'claude',
+  };
+
+  await appendUsageEvent(event);
+  await updateKnownSkills(skillName);
 }

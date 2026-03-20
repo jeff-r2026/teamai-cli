@@ -132,6 +132,7 @@ export const TEAMAI_ENV_END = '# [teamai:env:end]';
 export const SKILL_NAME_REGEX = /^[a-zA-Z0-9_\-:.]{1,200}$/;
 
 export const TEAMAI_USAGE_PATH = `${TEAMAI_HOME}/usage.jsonl`;
+export const TEAMAI_KNOWN_SKILLS_PATH = `${TEAMAI_HOME}/known-skills.json`;
 export const TEAMAI_SESSIONS_DIR = `${TEAMAI_HOME}/sessions`;
 
 export interface UsageEvent {

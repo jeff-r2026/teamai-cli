@@ -156,11 +156,17 @@ envCmd
 // ─── Usage tracking commands ────────────────────────────
 
 program
-  .command('track <toolName> [toolInput]')
+  .command('track [toolName] [toolInput]')
   .description('Track a tool usage event (called by PostToolUse hook)')
-  .action(async (toolName, toolInput) => {
-    const { track } = await import('./usage-tracker.js');
-    await track(toolName, toolInput ?? '{}');
+  .option('--stdin', 'Read hook data from STDIN (Claude Code hook format)')
+  .action(async (toolName, toolInput, cmdOpts) => {
+    if (cmdOpts.stdin) {
+      const { trackFromStdin } = await import('./usage-tracker.js');
+      await trackFromStdin();
+    } else {
+      const { track } = await import('./usage-tracker.js');
+      await track(toolName ?? '', toolInput ?? '{}');
+    }
   });
 
 program

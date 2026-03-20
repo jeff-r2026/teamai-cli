@@ -21,6 +21,9 @@ import {
   readUsageEvents,
   truncateUsageAfterReport,
   track,
+  trackFromStdin,
+  updateKnownSkills,
+  readKnownSkills,
 } from '../usage-tracker.js';
 import { aggregateUsage } from '../stats.js';
 import { evaluateSessionValue } from '../session-collector.js';
@@ -42,6 +45,36 @@ afterEach(async () => {
   process.env.HOME = origHome;
   await fse.remove(tmpDir);
 });
+
+/**
+ * Helper: mock process.stdin to return the given string.
+ * Returns a restore function.
+ */
+function mockStdin(data: string): () => void {
+  const original = process.stdin;
+  const readable = new (require('stream').Readable)({
+    read() {
+      this.push(data);
+      this.push(null);
+    },
+  });
+  // Mark as not a TTY so trackFromStdin reads it
+  (readable as NodeJS.ReadStream).isTTY = false;
+
+  Object.defineProperty(process, 'stdin', {
+    value: readable,
+    writable: true,
+    configurable: true,
+  });
+
+  return () => {
+    Object.defineProperty(process, 'stdin', {
+      value: original,
+      writable: true,
+      configurable: true,
+    });
+  };
+}
 
 // ─── usage-tracker tests ───────────────────────────────
 
@@ -183,6 +216,162 @@ describe('track', () => {
     const events = await readUsageEvents();
     expect(events).toEqual([]);
   });
+
+  it('updates known-skills.json on successful track', async () => {
+    await track('Skill', JSON.stringify({ skill: 'code-review' }));
+
+    const known = await readKnownSkills();
+    expect(known.has('code-review')).toBe(true);
+  });
+});
+
+// ─── trackFromStdin tests ─────────────────────────────
+
+describe('trackFromStdin', () => {
+  it('reads STDIN JSON and tracks Skill tool usage', async () => {
+    const hookData = JSON.stringify({
+      tool_name: 'Skill',
+      tool_input: { skill: 'plan-eng-review', args: 'test' },
+      tool_output: 'some output',
+      session_id: 'sess-123',
+    });
+    const restore = mockStdin(hookData);
+    try {
+      await trackFromStdin();
+    } finally {
+      restore();
+    }
+
+    const events = await readUsageEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0].skill).toBe('plan-eng-review');
+  });
+
+  it('ignores non-Skill tools from STDIN', async () => {
+    const hookData = JSON.stringify({
+      tool_name: 'Bash',
+      tool_input: { command: 'ls -la' },
+    });
+    const restore = mockStdin(hookData);
+    try {
+      await trackFromStdin();
+    } finally {
+      restore();
+    }
+
+    const events = await readUsageEvents();
+    expect(events).toEqual([]);
+  });
+
+  it('handles empty STDIN gracefully', async () => {
+    const restore = mockStdin('');
+    try {
+      await trackFromStdin();
+    } finally {
+      restore();
+    }
+
+    const events = await readUsageEvents();
+    expect(events).toEqual([]);
+  });
+
+  it('handles malformed STDIN JSON gracefully', async () => {
+    const restore = mockStdin('not valid json {{{');
+    try {
+      await trackFromStdin();
+    } finally {
+      restore();
+    }
+
+    const events = await readUsageEvents();
+    expect(events).toEqual([]);
+  });
+
+  it('extracts skill from tool_input object (not string)', async () => {
+    const hookData = JSON.stringify({
+      tool_name: 'Skill',
+      tool_input: { skill: 'tdd' },
+    });
+    const restore = mockStdin(hookData);
+    try {
+      await trackFromStdin();
+    } finally {
+      restore();
+    }
+
+    const events = await readUsageEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0].skill).toBe('tdd');
+  });
+
+  it('updates known-skills.json on successful STDIN track', async () => {
+    const hookData = JSON.stringify({
+      tool_name: 'Skill',
+      tool_input: { skill: 'code-review' },
+    });
+    const restore = mockStdin(hookData);
+    try {
+      await trackFromStdin();
+    } finally {
+      restore();
+    }
+
+    const known = await readKnownSkills();
+    expect(known.has('code-review')).toBe(true);
+  });
+});
+
+// ─── known-skills tests ───────────────────────────────
+
+describe('updateKnownSkills', () => {
+  it('writes new skill to known-skills.json', async () => {
+    await updateKnownSkills('code-review');
+
+    const knownPath = path.join(tmpDir, '.teamai', 'known-skills.json');
+    const content = JSON.parse(await fs.promises.readFile(knownPath, 'utf-8'));
+    expect(content).toContain('code-review');
+  });
+
+  it('does not duplicate existing skills', async () => {
+    await updateKnownSkills('tdd');
+    await updateKnownSkills('tdd');
+    await updateKnownSkills('tdd');
+
+    const knownPath = path.join(tmpDir, '.teamai', 'known-skills.json');
+    const content = JSON.parse(await fs.promises.readFile(knownPath, 'utf-8'));
+    expect(content.filter((s: string) => s === 'tdd')).toHaveLength(1);
+  });
+});
+
+describe('readKnownSkills', () => {
+  it('merges usage.jsonl and known-skills.json', async () => {
+    // Seed known-skills with a previously-reported skill
+    await updateKnownSkills('old-skill');
+
+    // Add a new event to usage.jsonl
+    await appendUsageEvent({ skill: 'new-skill', timestamp: '2026-03-20T10:00:00Z', tool: 'claude' });
+
+    const skills = await readKnownSkills();
+    expect(skills.has('old-skill')).toBe(true);
+    expect(skills.has('new-skill')).toBe(true);
+  });
+
+  it('returns empty set when neither file exists', async () => {
+    const skills = await readKnownSkills();
+    expect(skills.size).toBe(0);
+  });
+
+  it('handles corrupted known-skills.json gracefully', async () => {
+    const knownPath = path.join(tmpDir, '.teamai', 'known-skills.json');
+    await fse.ensureDir(path.dirname(knownPath));
+    await fs.promises.writeFile(knownPath, 'NOT_JSON!!!');
+
+    // Should still work with just usage.jsonl data
+    await appendUsageEvent({ skill: 'tdd', timestamp: '2026-03-20T10:00:00Z', tool: 'claude' });
+
+    const skills = await readKnownSkills();
+    expect(skills.has('tdd')).toBe(true);
+  });
 });
 
 // ─── stats tests ───────────────────────────────────────
@@ -302,6 +491,51 @@ describe('getRecommendations', () => {
     const recs = await getRecommendations(teamStats);
     expect(recs.length).toBeGreaterThan(0);
     expect(recs[0].skill).toBe('code-review');
+  });
+
+  it('excludes skills in known-skills.json from recommendations', async () => {
+    // Mark code-review as known
+    await updateKnownSkills('code-review');
+
+    const teamStats: UserStats[] = [
+      {
+        username: 'alice',
+        updatedAt: '2026-03-19T10:00:00Z',
+        skills: { 'code-review': { count: 10, lastUsed: new Date().toISOString() } },
+      },
+      {
+        username: 'bob',
+        updatedAt: '2026-03-19T10:00:00Z',
+        skills: { 'code-review': { count: 5, lastUsed: new Date().toISOString() } },
+      },
+    ];
+
+    const recs = await getRecommendations(teamStats);
+    expect(recs.length).toBe(0);
+  });
+
+  it('excludes skills after truncation when known-skills.json exists', async () => {
+    // Simulate: track a skill, then report+truncate
+    await track('Skill', JSON.stringify({ skill: 'tdd' }));
+    await truncateUsageAfterReport(1); // usage.jsonl is now empty
+
+    // But known-skills.json should still have 'tdd'
+    const teamStats: UserStats[] = [
+      {
+        username: 'alice',
+        updatedAt: '2026-03-19T10:00:00Z',
+        skills: { tdd: { count: 10, lastUsed: new Date().toISOString() } },
+      },
+      {
+        username: 'bob',
+        updatedAt: '2026-03-19T10:00:00Z',
+        skills: { tdd: { count: 5, lastUsed: new Date().toISOString() } },
+      },
+    ];
+
+    const recs = await getRecommendations(teamStats);
+    // tdd should NOT be recommended because it's in known-skills.json
+    expect(recs.find((r) => r.skill === 'tdd')).toBeUndefined();
   });
 
   it('returns empty for no team data', async () => {

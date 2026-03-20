@@ -5,7 +5,9 @@ import { TEAMAI_HOOK_DESCRIPTION_PREFIX } from './types.js';
 
 const TEAMAI_PULL_COMMAND = 'bash -lc "teamai pull" 2>/dev/null || true';
 const TEAMAI_UPDATE_CHECK_COMMAND = 'bash -lc "teamai update --check" 2>/dev/null || true';
-const TEAMAI_TRACK_COMMAND = 'bash -lc \'teamai track "$CLAUDE_TOOL_NAME" "$CLAUDE_TOOL_INPUT"\' 2>/dev/null || true';
+const TEAMAI_TRACK_COMMAND = 'bash -lc "teamai track --stdin" 2>>~/.teamai/debug.log || true';
+/** Legacy command pattern for detecting old hook installations that need upgrading. */
+const TEAMAI_TRACK_COMMAND_LEGACY = 'teamai track "$CLAUDE_TOOL_NAME"';
 
 // ─── Claude Code / Claude Internal format (settings.json) ───
 

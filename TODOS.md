@@ -30,3 +30,14 @@
 **Priority:** P3
 **Depends on:** Phase 2 (搜索 + 投票) 完成。
 **Added:** 2026-03-19 by /plan-eng-review
+
+## E2E 负面场景测试
+**What:** 为 E2E 测试新增 token 过期、仓库无效、网络超时等负面场景用例。
+**Why:** 现有 E2E 全是 happy path，错误处理逻辑（Error Handling 表格中的 5 种场景）未被验证。
+**Pros:** 确保 CI 失败时给出清晰提示（如 "TEAMAI_TEST_TOKEN expired"），而不是不明报错。
+**Cons:** 需要 mock 或制造失败环境，写起来比 happy path 复杂。
+**Context:** CI pipeline 设计文档 `docs/designs/ci-pipeline.md` 的 Error Handling 表列了 5 种错误场景。Eng review Issue 6 中决定先只迁移 happy path，负面测试等 CI 基础版跑通后再加。优先覆盖：(1) token 未设置/过期 (2) 无效 repo URL (3) 网络超时。
+**Effort:** S (human: ~2 hours / CC: ~10min)
+**Priority:** P3
+**Depends on:** CI pipeline 基础版（.gitlab-ci.yml + E2E 迁移）完成。
+**Added:** 2026-03-20 by /plan-eng-review
