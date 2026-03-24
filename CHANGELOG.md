@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.4.5] - 2026-03-24
+
+### Added
+- **Slash Command 使用追踪**：新增 `UserPromptSubmit` hook 检测 `/slash-command` 调用（如 `/plan-eng-review`、`/tdd`），自动记录到 `usage.jsonl`
+  - 新增 `teamai track-slash --stdin` CLI 命令，解析 Claude Code 的 `UserPromptSubmit` hook JSON
+  - 支持冒号命名空间格式（如 `/gstack:tdd`）
+  - `teamai init` 自动注入 `UserPromptSubmit` hook 到 Claude Code settings.json
+
+### Fixed
+- **Usage 上报竞态条件**：`reportUsageToTeam` 改为先 `git pull` 获取最新远端 stats 再合并本地数据，防止并发 push 时相互覆盖导致数据丢失
+
+### Changed
+- **Hooks 注入重构**：`hooks.ts` 从 200+ 行嵌套 if/else 重构为数据驱动的 `CLAUDE_HOOKS[]` 数组 + 通用 `ensureClaudeHook()` 函数，新增 hook 只需加一行定义
+- `stats.ts` 和 `team-push.ts` 之间新增交叉引用注释，标注两处 merge 逻辑的关联
+
+### Tests
+- 新增 8 个 trackSlashCommand 测试：合法追踪、冒号命名空间、非 slash 忽略、空 prompt、空 STDIN、畸形 JSON、known-skills 更新
+- 全量 302 测试通过，零回归
+
+### For Existing Users
+存量用户下次 `teamai pull` 或重新运行 `teamai init` 后，`UserPromptSubmit` hook 会自动注入，无需手动操作。
+
 ## [0.4.4] - 2026-03-22
 
 ### Added
