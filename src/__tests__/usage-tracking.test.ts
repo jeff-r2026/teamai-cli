@@ -1048,6 +1048,79 @@ describe('hook command strings', () => {
     );
     expect(trackHook.hooks[0].command).toContain('--tool claude');
   });
+
+  it('cleans up legacy hooks without description on inject', async () => {
+    const { injectHooks } = await import('../hooks.js');
+    const settingsPath = path.join(tmpDir, '.test-legacy-cleanup', 'settings.json');
+    await fse.ensureDir(path.dirname(settingsPath));
+
+    // Write a settings file with legacy duplicate hooks (no description)
+    const legacySettings = {
+      hooks: {
+        SessionStart: [
+          { matcher: '*', hooks: [{ type: 'command', command: 'bash -lc "teamai pull" 2>/dev/null || true' }] },
+          { matcher: '*', hooks: [{ type: 'command', command: 'bash -lc "teamai pull" 2>/dev/null || true' }] },
+          { matcher: '*', hooks: [{ type: 'command', command: 'bash -lc "teamai pull" 2>/dev/null || true' }] },
+        ],
+        Stop: [
+          { matcher: '*', hooks: [{ type: 'command', command: 'bash -lc "teamai update" 2>/dev/null || true' }] },
+          { matcher: '*', hooks: [{ type: 'command', command: 'bash -lc "teamai update" 2>/dev/null || true' }] },
+        ],
+        PreToolUse: [
+          { matcher: '*', hooks: [{ type: 'command', command: '/some/other/observe.sh' }] },
+        ],
+      },
+    };
+    await fs.promises.writeFile(settingsPath, JSON.stringify(legacySettings, null, 2));
+
+    await injectHooks(settingsPath, 'claude-internal');
+
+    const result = JSON.parse(await fs.promises.readFile(settingsPath, 'utf-8'));
+
+    // Legacy duplicates should be cleaned, replaced by single hooks with description
+    expect(result.hooks.SessionStart).toHaveLength(1);
+    expect(result.hooks.SessionStart[0].description).toBeDefined();
+
+    expect(result.hooks.Stop).toHaveLength(1);
+    expect(result.hooks.Stop[0].description).toBeDefined();
+
+    // Non-teamai hooks should be preserved
+    expect(result.hooks.PreToolUse).toHaveLength(1);
+    expect(result.hooks.PreToolUse[0].hooks[0].command).toContain('observe.sh');
+  });
+
+  it('preserves non-teamai hooks during legacy cleanup', async () => {
+    const { injectHooks } = await import('../hooks.js');
+    const settingsPath = path.join(tmpDir, '.test-preserve-others', 'settings.json');
+    await fse.ensureDir(path.dirname(settingsPath));
+
+    const mixedSettings = {
+      hooks: {
+        PostToolUse: [
+          { matcher: '*', hooks: [{ type: 'command', command: '/data/jeff/continuous-learning/observe.sh' }] },
+          { matcher: 'Skill', hooks: [{ type: 'command', command: 'bash -lc "teamai track --stdin" 2>>~/.teamai/debug.log || true' }] },
+        ],
+      },
+    };
+    await fs.promises.writeFile(settingsPath, JSON.stringify(mixedSettings, null, 2));
+
+    await injectHooks(settingsPath, 'claude');
+
+    const result = JSON.parse(await fs.promises.readFile(settingsPath, 'utf-8'));
+
+    // continuous-learning hook preserved, legacy teamai track removed + replaced with proper one
+    const observeHooks = result.hooks.PostToolUse.filter(
+      (h: { hooks?: Array<{ command: string }> }) => h.hooks?.[0]?.command?.includes('observe.sh'),
+    );
+    expect(observeHooks).toHaveLength(1);
+
+    // teamai track hook should have description now
+    const trackHooks = result.hooks.PostToolUse.filter(
+      (h: { description?: string }) => h.description?.includes('Track skill'),
+    );
+    expect(trackHooks).toHaveLength(1);
+    expect(trackHooks[0].hooks[0].command).toContain('--tool claude');
+  });
 });
 
 // ─── showStats merge tests (via readUsageEvents + aggregateUsage) ───

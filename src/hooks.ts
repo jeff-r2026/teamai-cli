@@ -136,6 +136,38 @@ function detectFormat(tool: string): ToolFormat {
 
 // ─── Claude Code hooks injection ────────────────────────────
 
+/** Known teamai command substrings used to identify legacy hooks without description. */
+const TEAMAI_COMMAND_MARKERS = ['teamai pull', 'teamai update', 'teamai track'];
+
+/**
+ * Remove legacy teamai hooks that were injected without a description field.
+ * Early versions of teamai-cli did not add `description` to hooks, so
+ * `ensureClaudeHook` could not find them and kept appending duplicates.
+ * This function cleans up those orphans before re-injecting proper hooks.
+ * Returns true if any entries were removed.
+ */
+function cleanupLegacyHooks(settings: ClaudeSettingsJson): boolean {
+  if (!settings.hooks) return false;
+
+  let changed = false;
+  for (const [event, matchers] of Object.entries(settings.hooks)) {
+    const filtered = matchers.filter((h) => {
+      // Keep hooks that have a description (they are managed by ensureClaudeHook)
+      if (h.description) return true;
+      // Keep hooks whose command does not match any teamai marker
+      const cmd = h.hooks?.[0]?.command ?? '';
+      const isLegacyTeamai = TEAMAI_COMMAND_MARKERS.some((marker) => cmd.includes(marker));
+      return !isLegacyTeamai;
+    });
+    if (filtered.length !== matchers.length) {
+      settings.hooks[event] = filtered;
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
 /**
  * Ensure a single teamai hook exists in the settings for the given event type.
  * If it already exists, update it if the command or matcher changed.
@@ -184,7 +216,7 @@ async function injectClaudeHooks(settingsPath: string, tool: string): Promise<vo
   await ensureDir(path.dirname(expanded));
   const settings: ClaudeSettingsJson = (await readJson<ClaudeSettingsJson>(expanded)) ?? {};
 
-  let changed = false;
+  let changed = cleanupLegacyHooks(settings);
   for (const def of getClaudeHooks(tool)) {
     if (ensureClaudeHook(settings, def)) {
       changed = true;
@@ -204,7 +236,7 @@ async function removeClaudeHooks(settingsPath: string): Promise<void> {
   const settings = await readJson<ClaudeSettingsJson>(expanded);
   if (!settings?.hooks) return;
 
-  let changed = false;
+  let changed = cleanupLegacyHooks(settings);
   for (const [event, matchers] of Object.entries(settings.hooks)) {
     const filtered = matchers.filter(
       (h) => !h.description?.startsWith(TEAMAI_HOOK_DESCRIPTION_PREFIX)
