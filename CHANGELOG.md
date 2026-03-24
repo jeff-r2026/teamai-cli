@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.4.6] - 2026-03-24
+
+### Fixed
+- **Usage tracking `tool` 字段归因修复**：hook 命令从 `teamai track --stdin` 改为 `teamai track --stdin --tool <name>`，每个工具的 settings.json 注入各自标识（claude / claude-internal / codebuddy 等），usage 数据不再全部记为 `'claude'`
+- **清理遗留重复 hooks**：早期版本注入的 hook 无 `description` 字段导致重复堆积，新增 `cleanupLegacyHooks()` 在注入前自动清理，非 teamai hook（如 continuous-learning）不受影响
+
+### Added
+- **Update 后自动刷新 hooks**：`teamai update` 成功安装新版后自动调用 `injectHooksToAllTools()`，老用户无需重新 `teamai init`，未初始化则静默跳过
+- `track` / `track-slash` CLI 命令新增 `--tool <name>` option，缺省默认 `'claude'`（向后兼容）
+
+### Tests
+- 新增 17 个测试：--tool 参数传递、向后兼容、hook 命令字符串验证、遗留 hook 清理、非 teamai hook 保留、update 后 hooks 刷新
+- 全量 317 测试通过，零回归
+
+### For Existing Users
+无需任何手动操作。下次 session 结束时 Stop hook 触发 `teamai update` → 自动安装新版 → 自动刷新 hooks + 清理重复条目。
+
 ## [0.4.5] - 2026-03-24
 
 ### Added
