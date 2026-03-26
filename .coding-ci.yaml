@@ -1,8 +1,4 @@
-# ─────────────────────────────────────────────────────────────
-# TeamAI CLI — Coding CI Pipeline
-# ─────────────────────────────────────────────────────────────
 version: 2
-
 env:
   TEAMAI_TEST_TOKEN:
     secret: ${TEAMAI_TEST_TOKEN_SECRET}
@@ -10,10 +6,6 @@ env:
     secret: ${TEAMAI_TEST_REPO_URL_SECRET}
   NPM_TOKEN:
     secret: ${NPM_TOKEN_SECRET}
-
-# ─────────────────────────────────────────────────────────────
-# Stage 1: validate (Issue 2: lint + test 并行)
-# ─────────────────────────────────────────────────────────────
 stages:
 - stage: validate
   tasks:
@@ -29,7 +21,6 @@ stages:
         - node --version && npm --version
         - npm ci --ignore-scripts
         - npx tsc --noEmit
-
   - worker:
       label: PUBLIC
       language: node
@@ -44,10 +35,6 @@ stages:
         - node --version && npm --version
         - npm ci
         - npx vitest run --coverage
-
-# ─────────────────────────────────────────────────────────────
-# Stage 2: build
-# ─────────────────────────────────────────────────────────────
 - stage: build
   tasks:
   - worker:
@@ -63,10 +50,6 @@ stages:
         - echo "=== Build ==="
         - npm ci --ignore-scripts
         - npm run build
-
-# ─────────────────────────────────────────────────────────────
-# Stage 3: e2e (有 token 时才跑)
-# ─────────────────────────────────────────────────────────────
 - stage: e2e
   tasks:
   - worker:
@@ -78,19 +61,11 @@ stages:
       params:
         cmds:
         - echo "=== E2E Tests ==="
-        - |
-          if [ -z "$TEAMAI_TEST_TOKEN" ]; then
-            echo "⏭  TEAMAI_TEST_TOKEN not set, skipping E2E"
-            exit 0
-          fi
+        - "if [ -z \"$TEAMAI_TEST_TOKEN\" ]; then\n  echo \"⏭  TEAMAI_TEST_TOKEN not\
+          \ set, skipping E2E\"\n  exit 0\nfi\n"
         - npm ci
         - npm run build
         - npx vitest run --config vitest.e2e.config.ts
-
-# ─────────────────────────────────────────────────────────────
-# Stage 4: publish (Issue 3: 版本预检; Issue 5: .npmrc)
-# 仅在 tag 触发时执行
-# ─────────────────────────────────────────────────────────────
 - stage: publish
   tasks:
   - worker:
@@ -102,25 +77,15 @@ stages:
       params:
         cmds:
         - echo "=== Publish to tnpm ==="
-        # Issue 3 — 版本预检：fail fast if already published
-        - |
-          PKG_NAME=$(node -p "require('./package.json').name")
-          PKG_VERSION=$(node -p "require('./package.json').version")
-          if npm view "${PKG_NAME}@${PKG_VERSION}" version --registry http://r.tnpm.oa.com 2>/dev/null; then
-            echo "ERROR: ${PKG_NAME}@${PKG_VERSION} is already published."
-            exit 1
-          fi
-        # Issue 5 — create .npmrc from CI variable
+        - "PKG_NAME=$(node -p \"require('./package.json').name\")\nPKG_VERSION=$(node\
+          \ -p \"require('./package.json').version\")\nif npm view \"${PKG_NAME}@${PKG_VERSION}\"\
+          \ version --registry http://r.tnpm.oa.com 2>/dev/null; then\n  echo \"ERROR:\
+          \ ${PKG_NAME}@${PKG_VERSION} is already published.\"\n  exit 1\nfi\n"
         - echo "//r.tnpm.oa.com/:_authToken=${NPM_TOKEN}" > .npmrc
         - npm ci --ignore-scripts
         - npm run build
         - npm publish
-        # Issue 5 — clean up .npmrc
         - rm -f .npmrc
-
-# ─────────────────────────────────────────────────────────────
-# Triggers
-# ─────────────────────────────────────────────────────────────
 trigger:
   branches:
     include:
@@ -128,16 +93,11 @@ trigger:
   tags:
     include:
     - /^v\d+\.\d+\.\d+/
-
 mr:
   branches:
     include:
     - master
   is_block_mr: 0
-
-# Issue 1 — cache: Coding CI 在同一 worker 上自动缓存 node_modules
-# (package-lock.json 未变时 npm ci 会复用缓存)
-
 finally:
   failure:
     cmds:
@@ -145,14 +105,12 @@ finally:
       params:
         cmds:
         - echo "CI pipeline 失败!"
-
 notifications:
 - name: TeamAI CLI CI 通知
   channel: ENWECHAT
   group: QCI_JOB_ADMIN
   on_success: change
   on_failure: always
-
 maximum_builds: 1
 is_no_revert: 0
 is_auto_cancel: 1
