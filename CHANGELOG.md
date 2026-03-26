@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.5.2](https://git.woa.com/teamai/teamai-cli/compare/v0.5.0...v0.5.2) (2026-03-26)
+
+
+### Bug Fixes
+
+* clean up stale local rule files during pull (merge request !71) ([30a4662](https://git.woa.com/teamai/teamai-cli/commit/30a466271394b2a7b2ca3d229aada3ea8cb57f17))
+* skip tracking slash commands for non-existent skills (merge request !70) ([8eb2778](https://git.woa.com/teamai/teamai-cli/commit/8eb2778a58e4715b5aab56462b5c24634a1cd16f))
+
 ## [0.5.1](https://git.woa.com/teamai/teamai-cli/compare/v0.5.0...v0.5.1) (2026-03-25)
 
 ### Bug Fixes
