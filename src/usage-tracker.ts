@@ -397,33 +397,36 @@ export async function trackSlashCommand(toolArg?: string): Promise<void> {
     return;
   }
 
-  // Extract skill name: first word after "/" (e.g. "/plan-eng-review args" → "plan-eng-review")
-  const match = prompt.match(/^\/([a-zA-Z0-9_\-:.]+)/);
-  if (!match) {
+  // Extract all skill names after "/" in the prompt
+  // (e.g. "/plan-eng-review some args /tdd /code-review" → ["plan-eng-review", "tdd", "code-review"])
+  const matches = [...prompt.matchAll(/\/([a-zA-Z0-9_\-:.]+)/g)];
+  if (matches.length === 0) {
     log.debug('Could not extract skill name from slash command');
     return;
   }
 
-  const skillName = match[1];
+  for (const match of matches) {
+    const skillName = match[1];
 
-  if (!isValidSkillName(skillName)) {
-    log.debug(`Invalid slash skill name rejected: ${skillName.slice(0, 50)}`);
-    return;
+    if (!isValidSkillName(skillName)) {
+      log.debug(`Invalid slash skill name rejected: ${skillName.slice(0, 50)}`);
+      continue;
+    }
+
+    // Verify the skill actually exists on disk to avoid tracking phantom skills
+    // (e.g. user typing "/data" which is not a real skill)
+    if (!await skillExistsOnDisk(skillName)) {
+      log.debug(`Slash command "/${skillName}" is not a known skill — skipping tracking`);
+      continue;
+    }
+
+    const event: UsageEvent = {
+      skill: skillName,
+      timestamp: new Date().toISOString(),
+      tool: toolArg ?? 'claude',
+    };
+
+    await appendUsageEvent(event);
+    await updateKnownSkills(skillName);
   }
-
-  // Verify the skill actually exists on disk to avoid tracking phantom skills
-  // (e.g. user typing "/data" which is not a real skill)
-  if (!await skillExistsOnDisk(skillName)) {
-    log.debug(`Slash command "/${skillName}" is not a known skill — skipping tracking`);
-    return;
-  }
-
-  const event: UsageEvent = {
-    skill: skillName,
-    timestamp: new Date().toISOString(),
-    tool: toolArg ?? 'claude',
-  };
-
-  await appendUsageEvent(event);
-  await updateKnownSkills(skillName);
 }

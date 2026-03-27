@@ -1012,6 +1012,70 @@ describe('trackSlashCommand', () => {
     expect(events).toHaveLength(1);
     expect(events[0].tool).toBe('claude');
   });
+
+  it('tracks multiple slash commands in a single prompt', async () => {
+    await createFakeSkill('plan-eng-review');
+    await createFakeSkill('tdd');
+    await createFakeSkill('code-review');
+    const hookData = JSON.stringify({
+      prompt: '/plan-eng-review /tdd /code-review',
+      session_id: 'sess-multi',
+      hook_event_name: 'UserPromptSubmit',
+    });
+    const restore = mockStdin(hookData);
+    try {
+      await trackSlashCommand();
+    } finally {
+      restore();
+    }
+
+    const events = await readUsageEvents();
+    expect(events).toHaveLength(3);
+    expect(events.map((e: UsageEvent) => e.skill).sort()).toEqual(
+      ['code-review', 'plan-eng-review', 'tdd'],
+    );
+  });
+
+  it('tracks multiple slash commands with arguments between them', async () => {
+    await createFakeSkill('tdd');
+    await createFakeSkill('code-review');
+    const hookData = JSON.stringify({
+      prompt: '/tdd fix the login bug /code-review',
+      session_id: 'sess-multi-args',
+    });
+    const restore = mockStdin(hookData);
+    try {
+      await trackSlashCommand();
+    } finally {
+      restore();
+    }
+
+    const events = await readUsageEvents();
+    expect(events).toHaveLength(2);
+    expect(events.map((e: UsageEvent) => e.skill).sort()).toEqual(
+      ['code-review', 'tdd'],
+    );
+  });
+
+  it('skips non-existent skills among multiple slash commands', async () => {
+    await createFakeSkill('tdd');
+    // 'nonexistent' is NOT created on disk
+    const hookData = JSON.stringify({
+      prompt: '/tdd /nonexistent /tdd',
+      session_id: 'sess-multi-phantom',
+    });
+    const restore = mockStdin(hookData);
+    try {
+      await trackSlashCommand();
+    } finally {
+      restore();
+    }
+
+    const events = await readUsageEvents();
+    // Only 'tdd' should be tracked (twice — it appears twice in prompt)
+    expect(events).toHaveLength(2);
+    expect(events.every((e: UsageEvent) => e.skill === 'tdd')).toBe(true);
+  });
 });
 
 // ─── track() with --tool tests ────────────────────────
