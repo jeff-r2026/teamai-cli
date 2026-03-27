@@ -45,7 +45,7 @@ describe('contributeState', () => {
     // Session A writes
     const stateA: ContributeState = {
       toolCount: 50,
-      hinted: false,
+      evaluated: false,
       contributed: false,
     };
     await writeContributeState('session-aaa', stateA);
@@ -53,7 +53,7 @@ describe('contributeState', () => {
     // Session B writes
     const stateB: ContributeState = {
       toolCount: 10,
-      hinted: false,
+      evaluated: false,
       contributed: false,
     };
     await writeContributeState('session-bbb', stateB);
@@ -71,7 +71,7 @@ describe('contributeState', () => {
     const state = await readContributeState('nonexistent-session');
     expect(state).toEqual({
       toolCount: 0,
-      hinted: false,
+      evaluated: false,
       contributed: false,
     });
   });
@@ -84,7 +84,7 @@ describe('contributeState', () => {
     const state = await readContributeState('broken-session');
     expect(state).toEqual({
       toolCount: 0,
-      hinted: false,
+      evaluated: false,
       contributed: false,
     });
   });
@@ -95,16 +95,16 @@ describe('contributeState', () => {
 
     // Create an old session file with mtime 25 hours ago
     const oldFile = path.join(sessionsDir, 'old-session.json');
-    fs.writeFileSync(oldFile, JSON.stringify({ toolCount: 5, hinted: false, contributed: false }));
+    fs.writeFileSync(oldFile, JSON.stringify({ toolCount: 5, evaluated: false, contributed: false }));
     const pastTime = Date.now() - 25 * 60 * 60 * 1000;
     fs.utimesSync(oldFile, new Date(pastTime), new Date(pastTime));
 
     // Create a recent session file
     const recentFile = path.join(sessionsDir, 'recent-session.json');
-    fs.writeFileSync(recentFile, JSON.stringify({ toolCount: 3, hinted: false, contributed: false }));
+    fs.writeFileSync(recentFile, JSON.stringify({ toolCount: 3, evaluated: false, contributed: false }));
 
     // Writing a new session triggers cleanup
-    await writeContributeState('new-session', { toolCount: 1, hinted: false, contributed: false });
+    await writeContributeState('new-session', { toolCount: 1, evaluated: false, contributed: false });
 
     // Old file should be gone
     expect(fs.existsSync(oldFile)).toBe(false);

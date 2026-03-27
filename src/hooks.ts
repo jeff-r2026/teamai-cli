@@ -195,6 +195,7 @@ function buildCursorHooks(tool: string): Record<string, CursorHookEntry[]> {
     postToolUse: [
       { command: getTrackCommand(tool), timeout: 10, matcher: 'Skill' },
       { command: getDashboardReportCommand(tool), timeout: 10 },
+      { command: getContributeCheckCommand(tool), timeout: 10 },
     ],
     userPromptSubmit: [
       { command: getTrackSlashCommand(tool), timeout: 10 },

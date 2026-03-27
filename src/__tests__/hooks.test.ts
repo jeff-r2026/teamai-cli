@@ -79,7 +79,7 @@ describe('hooks', () => {
       expect(result.hooks['UserPromptSubmit']).toHaveLength(2);
     });
 
-    it('Cursor format: injects 4 events with 8 hooks into empty hooks.json', async () => {
+    it('Cursor format: injects 4 events with 9 hooks into empty hooks.json', async () => {
       await injectHooks('/test/hooks.json', 'cursor');
 
       const result = mockFiles['/test/hooks.json'] as { version: number; hooks: Record<string, unknown[]> };
@@ -89,9 +89,11 @@ describe('hooks', () => {
       const events = Object.keys(result.hooks);
       expect(events).toEqual(['sessionStart', 'stop', 'postToolUse', 'userPromptSubmit']);
 
-      for (const event of events) {
-        expect(result.hooks[event]).toHaveLength(2);
-      }
+      // postToolUse has 3 hooks (track, dashboard, contribute-check), others have 2
+      expect(result.hooks['sessionStart']).toHaveLength(2);
+      expect(result.hooks['stop']).toHaveLength(2);
+      expect(result.hooks['postToolUse']).toHaveLength(3);
+      expect(result.hooks['userPromptSubmit']).toHaveLength(2);
     });
 
     it('Claude uses PascalCase event names', async () => {
@@ -129,9 +131,11 @@ describe('hooks', () => {
       await injectHooks('/test/hooks.json', 'cursor');
 
       const result = mockFiles['/test/hooks.json'] as { hooks: Record<string, unknown[]> };
-      for (const event of Object.values(result.hooks)) {
-        expect(event).toHaveLength(2);
-      }
+      // postToolUse has 3 hooks, others have 2
+      expect(result.hooks['sessionStart']).toHaveLength(2);
+      expect(result.hooks['stop']).toHaveLength(2);
+      expect(result.hooks['postToolUse']).toHaveLength(3);
+      expect(result.hooks['userPromptSubmit']).toHaveLength(2);
     });
 
     it('updates command when content changes (Claude)', async () => {

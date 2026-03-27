@@ -256,8 +256,10 @@ export const DASHBOARD_COMPACTION_THRESHOLD = 10_000;
 export interface ContributeState {
   /** Total tool calls counted so far */
   toolCount: number;
-  /** Whether the contribute hint has already been shown */
-  hinted: boolean;
+  /** Whether the smart score has been evaluated (prevents re-evaluation) */
+  evaluated: boolean;
+  /** Smart score computed at evaluation time (undefined before evaluation) */
+  smartScore?: number;
   /** Whether the user has already contributed this session */
   contributed: boolean;
 }

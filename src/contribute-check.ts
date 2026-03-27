@@ -43,7 +43,7 @@ function getSessionPath(sessionId: string): string {
 function defaultState(): ContributeState {
   return {
     toolCount: 0,
-    hinted: false,
+    evaluated: false,
     contributed: false,
   };
 }
@@ -51,9 +51,20 @@ function defaultState(): ContributeState {
 /** Read persisted contribute state. Returns defaults if missing or corrupted. */
 export async function readContributeState(sessionId: string): Promise<ContributeState> {
   try {
-    const state = await readJson<ContributeState>(getSessionPath(sessionId));
-    if (state) {
-      return state;
+    const raw = await readJson<Record<string, unknown>>(getSessionPath(sessionId));
+    if (raw) {
+      // Backward compat: migrate legacy "hinted" field to "evaluated"
+      const evaluated = typeof raw.evaluated === 'boolean'
+        ? raw.evaluated
+        : typeof raw.hinted === 'boolean'
+          ? raw.hinted
+          : false;
+      return {
+        toolCount: typeof raw.toolCount === 'number' ? raw.toolCount : 0,
+        evaluated,
+        smartScore: typeof raw.smartScore === 'number' ? raw.smartScore : undefined,
+        contributed: typeof raw.contributed === 'boolean' ? raw.contributed : false,
+      };
     }
     return defaultState();
   } catch {
@@ -214,8 +225,8 @@ export async function contributeCheck(toolArg?: string): Promise<void> {
   const { sessionId } = stdinData;
   const state = await readContributeState(sessionId);
 
-  // Already hinted or contributed — no need to check again
-  if (state.hinted || state.contributed) {
+  // Already evaluated or contributed — no need to check again
+  if (state.evaluated || state.contributed) {
     return;
   }
 
@@ -240,8 +251,9 @@ export async function contributeCheck(toolArg?: string): Promise<void> {
 
   log.debug(`contribute-check: smart score = ${score} (threshold: ${CONTRIBUTE_SMART_THRESHOLD})`);
 
-  // Mark as hinted regardless of score — avoid re-evaluating every subsequent call
-  updatedState.hinted = true;
+  // Mark as evaluated regardless of score — avoid re-evaluating every subsequent call
+  updatedState.evaluated = true;
+  updatedState.smartScore = score;
   await writeContributeState(sessionId, updatedState);
 
   if (score < CONTRIBUTE_SMART_THRESHOLD) {
