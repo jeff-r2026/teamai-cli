@@ -27,7 +27,7 @@ stages:
         cmds:
         - echo "=== Unit Tests + Coverage ==="
         - node --version && npm --version
-        - npm ci
+        - npm ci --ignore-scripts
         - npx vitest run --coverage
 - stage: build
   tasks:
@@ -49,7 +49,7 @@ stages:
       params:
         cmds:
         - echo "=== E2E Tests ==="
-        - npm ci
+        - npm ci --ignore-scripts
         - npm run build
         - TEAMAI_TEST_TOKEN= TEAMAI_TEST_REPO_URL= npx vitest run --config vitest.e2e.config.ts
 - stage: publish
