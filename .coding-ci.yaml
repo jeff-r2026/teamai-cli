@@ -45,9 +45,15 @@ stages:
         - npm ci --ignore-scripts
         - npm run build
         - "if [ -n \"$TEAMAI_TEST_TOKEN\" ] && [ -n \"$TEAMAI_TEST_REPO_URL\" ]; then\n\
-          \  echo \"Setting up auth for remote E2E tests...\"\n  echo \"machine git.woa.com\
-          \ login oauth2 password $TEAMAI_TEST_TOKEN\" > ~/.netrc\n  chmod 600 ~/.netrc\n\
-          \  echo Y | node dist/index.js init --repo \"$TEAMAI_TEST_REPO_URL\"\nfi\n"
+          \  echo \"Setting up teamai for remote E2E tests...\"\n  mkdir -p ~/.teamai\n\
+          \  REPO_LOCAL=~/.teamai/team-repo\n  if [ ! -d \"$REPO_LOCAL\" ]; then\n\
+          \    CLONE_URL=$(echo \"$TEAMAI_TEST_REPO_URL\" | sed \"s#https://#https://oauth2:${TEAMAI_TEST_TOKEN}@#\")\n\
+          \    git clone \"$CLONE_URL\" \"$REPO_LOCAL\" 2>&1 || echo \"Clone failed,\
+          \ creating empty repo dir\" && mkdir -p \"$REPO_LOCAL\" && git -C \"$REPO_LOCAL\"\
+          \ init 2>/dev/null\n  fi\n  cat > ~/.teamai/config.yaml <<EOFCFG\nrepo:\n\
+          \  localPath: \"$REPO_LOCAL\"\n  remote: \"$TEAMAI_TEST_REPO_URL\"\nusername:\
+          \ ci\nEOFCFG\n  echo \"teamai config ready at ~/.teamai/config.yaml\"\n\
+          fi\n"
         - npx vitest run --config vitest.e2e.config.ts
 - stage: publish
   tasks:
