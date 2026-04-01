@@ -4,6 +4,7 @@ env:
     secret: ${TEAMAI_TEST_TOKEN_SECRET}
   TEAMAI_TEST_REPO_URL:
     secret: ${TEAMAI_TEST_REPO_URL_SECRET}
+  NPM_USERNAME: ${NPM_USERNAME}
   NPM_TOKEN:
     secret: ${NPM_TOKEN_SECRET}
 stages:
@@ -71,6 +72,7 @@ stages:
           \ version --registry http://r.tnpm.oa.com 2>/dev/null; then\n  echo \"ERROR:\
           \ ${PKG_NAME}@${PKG_VERSION} is already published.\"\n  exit 1\nfi\n"
         - echo "//r.tnpm.oa.com/:_authToken=${NPM_TOKEN}" > .npmrc
+        - echo "//r.tnpm.oa.com/:username=${NPM_USERNAME}" >> .npmrc
         - npm ci --ignore-scripts
         - npm run build
         - npm publish
