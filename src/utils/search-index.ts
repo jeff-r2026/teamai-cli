@@ -96,7 +96,7 @@ export function tokenize(text: string): string[] {
  * Parse a learning document's frontmatter and body.
  * Returns null if the file is empty or unreadable.
  */
-function parseLearningDoc(
+export function parseLearningDoc(
   content: string,
   filename: string,
 ): { meta: LearningDocMeta; bodyExcerpt: string } | null {
@@ -135,7 +135,7 @@ function parseLearningDoc(
  * Derive a human-readable title from a filename.
  * "api-timeout-修复-2026-03-20-abc123.md" → "api timeout 修复"
  */
-function titleFromFilename(filename: string): string {
+export function titleFromFilename(filename: string): string {
   return filename
     .replace(/\.md$/i, '')
     .replace(/-\d{4}-\d{2}-\d{2}.*$/, '') // Remove date suffix and random

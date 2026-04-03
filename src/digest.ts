@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { log } from './utils/logger.js';
 import { readFileSafe, listFiles } from './utils/fs.js';
+import { parseLearningDoc, titleFromFilename } from './utils/search-index.js';
 import { requireInit, detectProjectConfig } from './config.js';
 import { calculateTeamHealth } from './skill-health.js';
 import { createGit } from './utils/git.js';
@@ -14,12 +15,20 @@ interface SkillChange {
   type: 'new' | 'updated';
 }
 
+interface LearningInfo {
+  title: string;
+  date: string;
+}
+
 // ─── Weekly Team Digest ────────────────────────────────
 //
 //  teamai digest
 //      │
 //      ▼
 //  [read team stats from stats/*.yaml]
+//      │
+//      ▼
+//  [read learnings from learnings/*.md]
 //      │
 //      ▼
 //  [read sessions from sessions/*/*.md]
@@ -185,6 +194,52 @@ async function getRecentSessions(repoPath: string): Promise<string[]> {
 }
 
 /**
+ * Get recent learnings from the past 7 days.
+ *
+ * Filters by date embedded in filename (YYYY-MM-DD pattern),
+ * then parses frontmatter for title metadata.
+ */
+async function getRecentLearnings(repoPath: string): Promise<{ recent: LearningInfo[]; total: number }> {
+  const learningsDir = path.join(repoPath, 'learnings');
+  const recent: LearningInfo[] = [];
+  let total = 0;
+
+  try {
+    const files = await listFiles(learningsDir);
+    const mdFiles = files.filter((f) => f.endsWith('.md'));
+    total = mdFiles.length;
+
+    // Calculate 7-day cutoff as YYYY-MM-DD string for comparison
+    const cutoff = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+
+    for (const filename of mdFiles) {
+      // Extract date from filename pattern: *-YYYY-MM-DD-*.md
+      const dateMatch = filename.match(/-(\d{4}-\d{2}-\d{2})-/);
+      if (!dateMatch) continue;
+
+      const fileDate = dateMatch[1];
+      if (fileDate < cutoff) continue;
+
+      // Parse frontmatter for title
+      const content = await readFileSafe(path.join(learningsDir, filename));
+      if (!content) continue;
+
+      const parsed = parseLearningDoc(content, filename);
+      const title = parsed?.meta.title ?? titleFromFilename(filename);
+
+      recent.push({ title, date: fileDate });
+    }
+
+    // Sort by date descending
+    recent.sort((a, b) => b.date.localeCompare(a.date));
+  } catch {
+    // learnings/ doesn't exist yet
+  }
+
+  return { recent, total };
+}
+
+/**
  * Generate and display weekly team digest.
  */
 export async function generateDigest(options: GlobalOptions): Promise<void> {
@@ -240,6 +295,20 @@ export async function generateDigest(options: GlobalOptions): Promise<void> {
       for (const session of sessions.slice(0, 5)) {
         console.log(`  ${session.slice(0, 120)}...`);
       }
+      console.log('');
+    }
+
+    // Learnings
+    const { recent: recentLearnings, total: totalLearnings } = await getRecentLearnings(repoPath);
+    if (recentLearnings.length > 0) {
+      console.log(`📚 本周新增 Learnings: ${recentLearnings.length} 篇`);
+      for (const learning of recentLearnings) {
+        console.log(`  • ${learning.title}`);
+      }
+      console.log('');
+    }
+    if (totalLearnings > 0) {
+      console.log(`📊 知识库总量: ${totalLearnings} 篇 learnings`);
       console.log('');
     }
 
