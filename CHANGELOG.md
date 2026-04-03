@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.11.0](https://git.woa.com/teamai/teamai-cli/compare/v0.10.1...v0.11.0) (2026-04-03)
+
+### 🤖 PostToolUse 自动 Recall — 报错自动搜索团队知识库
+
+AI 工具执行命令出错时，**自动搜索团队知识库并注入上下文**，无需手动调用 `teamai recall`。
+
+#### 核心特性
+
+- **被动触发**：PostToolUse hook 监听 Bash 工具输出，检测到错误时自动搜索团队知识库
+- **快速跳过**：无错误时 <50ms 退出，仅在检测到错误时才加载搜索索引
+- **智能匹配**：27 种错误模式识别 + 14 种误报排除规则，优先匹配最具体的错误行（如 `ModuleNotFoundError` 优先于 `Traceback`）
+- **防刷控制**：单 session 去重缓存 + 限流（最多 5 次/session）
+
+#### Bug 修复
+
+- **fix**: 正确解析 `tool_response.stdout/stderr` 字段（之前错误地读取 `tool_output`，导致 auto-recall 永远不触发）
+- **refactor**: hook matcher 从 `*`（所有工具）收窄到 `Bash`，避免 Grep/Read 等工具的代码内容触发误报，减少约 70% 无效 Node 进程启动
+
+### 📊 Digest 增加 Learnings 统计
+
+`teamai digest` 现在显示本周新增的 learnings 标题列表和知识库总量，复用 `search-index.ts` 已有的解析逻辑。
+
+### 🔧 新增 WorkBuddy 支持
+
+在 `toolPaths` 中新增 WorkBuddy 条目（`.workbuddy/skills`、`.workbuddy/rules`），支持 skills 和 rules 自动部署到 WorkBuddy 目录。
+
+---
+
 ## [0.9.1](https://git.woa.com/teamai/teamai-cli/compare/v0.9.0...v0.9.1) (2026-03-30)
 
 ### 🔧 修复 debug.log 始终为空的问题
