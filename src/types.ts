@@ -48,6 +48,7 @@ export const TeamaiConfigSchema = z.object({
     cursor: { skills: '.cursor/skills', rules: '.cursor/rules', settings: '.cursor/hooks.json' },
     codebuddy: { skills: '.codebuddy/skills', rules: '.codebuddy/rules', settings: '.codebuddy/settings.json', claudemd: '.codebuddy/CLAUDE.md' },
     openclaw: { skills: '.openclaw/skills', rules: '.openclaw/rules' },
+    workbuddy: { skills: '.workbuddy/skills', rules: '.workbuddy/rules' },
   }),
 });
 
