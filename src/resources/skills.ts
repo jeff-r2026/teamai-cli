@@ -9,6 +9,82 @@ import { loadRolesManifest, resolveRoleResourceNamespaces } from '../roles.js';
 
 /** File name used to track who has contributed (pushed) a skill. */
 const CONTRIBUTORS_FILE = 'CONTRIBUTORS';
+const SKILL_MD = 'SKILL.md';
+const FRONTMATTER_REGEX = /^---\n[\s\S]*?\n---/;
+
+/**
+ * Ensure a SKILL.md file has valid YAML frontmatter with `name` and `description`.
+ * If frontmatter is missing entirely, injects one derived from the skill name and
+ * the first meaningful line of content. If frontmatter exists but is missing `name`
+ * or `description`, adds the missing fields.
+ *
+ * This is called during push so that skills in the team repo always have proper
+ * metadata for marketplace discovery and triggering.
+ */
+export async function ensureSkillFrontmatter(skillDir: string, skillName: string): Promise<boolean> {
+  const skillMdPath = path.join(skillDir, SKILL_MD);
+  const content = await readFileSafe(skillMdPath);
+  if (!content) return false;
+
+  const fmMatch = content.match(FRONTMATTER_REGEX);
+
+  if (!fmMatch) {
+    // No frontmatter at all — derive description from first heading or first non-empty line
+    const description = extractDescriptionFromContent(content, skillName);
+    const frontmatter = `---\nname: ${skillName}\ndescription: ${description}\n---\n`;
+    const newContent = frontmatter + (content.startsWith('\n') ? content : '\n' + content);
+    await writeFile(skillMdPath, newContent);
+    log.debug(`Injected YAML frontmatter into ${skillName}/SKILL.md`);
+    return true;
+  }
+
+  // Frontmatter exists — check for missing fields
+  const fmBlock = fmMatch[0];
+  const fmBody = fmBlock.slice(4, fmBlock.length - 4); // strip leading/trailing ---\n
+  const hasName = /^name:\s*.+/m.test(fmBody);
+  const hasDescription = /^description:\s*.+/m.test(fmBody);
+
+  if (hasName && hasDescription) return false; // Already complete
+
+  const lines = fmBody.split('\n');
+  if (!hasName) {
+    lines.push(`name: ${skillName}`);
+  }
+  if (!hasDescription) {
+    const restContent = content.slice(fmMatch[0].length);
+    const description = extractDescriptionFromContent(restContent, skillName);
+    lines.push(`description: ${description}`);
+  }
+
+  const newFrontmatter = `---\n${lines.join('\n')}\n---`;
+  const newContent = content.replace(FRONTMATTER_REGEX, newFrontmatter);
+  await writeFile(skillMdPath, newContent);
+  log.debug(`Added missing frontmatter fields to ${skillName}/SKILL.md`);
+  return true;
+}
+
+/**
+ * Extract a short description from SKILL.md content by looking at the first
+ * heading (# Title) or the first non-empty line. Falls back to the skill name.
+ */
+function extractDescriptionFromContent(content: string, skillName: string): string {
+  const lines = content.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    // Use first heading text (strip # prefix)
+    const headingMatch = trimmed.match(/^#+\s+(.+)/);
+    if (headingMatch) {
+      return headingMatch[1].trim();
+    }
+    // Use first non-empty, non-heading line if it's descriptive enough
+    if (trimmed.length > 10) {
+      // Truncate to ~80 chars for a reasonable description
+      return trimmed.length > 80 ? trimmed.slice(0, 77) + '...' : trimmed;
+    }
+  }
+  return `${skillName} skill`;
+}
 
 /**
  * Scan the team repo skills/ directory to discover namespace subdirectories.
@@ -253,6 +329,9 @@ export class SkillsHandler extends ResourceHandler {
     const dest = getSkillDestination(localConfig, item.name, item.namespace ?? localConfig.primaryRole);
     await copyDir(item.sourcePath, dest);
     log.debug(`Copied skill ${item.name} → team repo`);
+
+    // Ensure SKILL.md has proper YAML frontmatter (name + description)
+    await ensureSkillFrontmatter(dest, item.name);
 
     // Append current user to CONTRIBUTORS (deduplicated)
     const contribPath = path.join(dest, CONTRIBUTORS_FILE);

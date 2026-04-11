@@ -15,7 +15,7 @@ vi.mock('../utils/logger.js', () => ({
 }));
 
 import { SkillsHandler } from '../resources/skills.js';
-import { scanTeamRepoNamespaces } from '../resources/skills.js';
+import { scanTeamRepoNamespaces, ensureSkillFrontmatter } from '../resources/skills.js';
 import type { TeamaiConfig, LocalConfig } from '../types.js';
 
 describe('SkillsHandler.scanLocalForPush', () => {
@@ -700,5 +700,173 @@ describe('scanTeamRepoNamespaces', () => {
     expect(namespaces).toContain('tencent');
     expect(namespaces).toContain('hai_dev');
     expect(namespaces).toHaveLength(2);
+  });
+});
+
+describe('ensureSkillFrontmatter', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fse.mkdtemp(path.join(os.tmpdir(), 'teamai-frontmatter-'));
+  });
+
+  afterEach(async () => {
+    await fse.remove(tmpDir);
+  });
+
+  it('injects frontmatter when SKILL.md has none', async () => {
+    const skillDir = path.join(tmpDir, 'my-skill');
+    await fse.ensureDir(skillDir);
+    await fse.writeFile(path.join(skillDir, 'SKILL.md'), '# My Awesome Skill\n\nDoes cool things.');
+
+    const changed = await ensureSkillFrontmatter(skillDir, 'my-skill');
+    expect(changed).toBe(true);
+
+    const content = await fse.readFile(path.join(skillDir, 'SKILL.md'), 'utf-8');
+    expect(content).toMatch(/^---\nname: my-skill\ndescription: My Awesome Skill\n---\n/);
+    // Original content preserved after frontmatter
+    expect(content).toContain('# My Awesome Skill');
+    expect(content).toContain('Does cool things.');
+  });
+
+  it('does not modify SKILL.md when frontmatter already has name and description', async () => {
+    const skillDir = path.join(tmpDir, 'complete-skill');
+    await fse.ensureDir(skillDir);
+    const original = '---\nname: complete-skill\ndescription: Already has metadata\n---\n\n# Complete Skill';
+    await fse.writeFile(path.join(skillDir, 'SKILL.md'), original);
+
+    const changed = await ensureSkillFrontmatter(skillDir, 'complete-skill');
+    expect(changed).toBe(false);
+
+    const content = await fse.readFile(path.join(skillDir, 'SKILL.md'), 'utf-8');
+    expect(content).toBe(original);
+  });
+
+  it('adds missing name field to existing frontmatter', async () => {
+    const skillDir = path.join(tmpDir, 'no-name');
+    await fse.ensureDir(skillDir);
+    await fse.writeFile(
+      path.join(skillDir, 'SKILL.md'),
+      '---\ndescription: Has description only\n---\n\n# No Name Skill',
+    );
+
+    const changed = await ensureSkillFrontmatter(skillDir, 'no-name');
+    expect(changed).toBe(true);
+
+    const content = await fse.readFile(path.join(skillDir, 'SKILL.md'), 'utf-8');
+    expect(content).toMatch(/name: no-name/);
+    expect(content).toMatch(/description: Has description only/);
+  });
+
+  it('adds missing description field to existing frontmatter', async () => {
+    const skillDir = path.join(tmpDir, 'no-desc');
+    await fse.ensureDir(skillDir);
+    await fse.writeFile(
+      path.join(skillDir, 'SKILL.md'),
+      '---\nname: no-desc\n---\n\n# A Skill Without Description',
+    );
+
+    const changed = await ensureSkillFrontmatter(skillDir, 'no-desc');
+    expect(changed).toBe(true);
+
+    const content = await fse.readFile(path.join(skillDir, 'SKILL.md'), 'utf-8');
+    expect(content).toMatch(/name: no-desc/);
+    expect(content).toMatch(/description: A Skill Without Description/);
+  });
+
+  it('uses first non-empty line when no heading is found', async () => {
+    const skillDir = path.join(tmpDir, 'no-heading');
+    await fse.ensureDir(skillDir);
+    await fse.writeFile(
+      path.join(skillDir, 'SKILL.md'),
+      'This skill does something interesting and useful for the team.',
+    );
+
+    const changed = await ensureSkillFrontmatter(skillDir, 'no-heading');
+    expect(changed).toBe(true);
+
+    const content = await fse.readFile(path.join(skillDir, 'SKILL.md'), 'utf-8');
+    expect(content).toMatch(/description: This skill does something interesting and useful for the team\./);
+  });
+
+  it('falls back to skill name when content is too short', async () => {
+    const skillDir = path.join(tmpDir, 'short');
+    await fse.ensureDir(skillDir);
+    await fse.writeFile(path.join(skillDir, 'SKILL.md'), 'Hi');
+
+    const changed = await ensureSkillFrontmatter(skillDir, 'short');
+    expect(changed).toBe(true);
+
+    const content = await fse.readFile(path.join(skillDir, 'SKILL.md'), 'utf-8');
+    expect(content).toMatch(/description: short skill/);
+  });
+
+  it('returns false for missing SKILL.md', async () => {
+    const skillDir = path.join(tmpDir, 'empty');
+    await fse.ensureDir(skillDir);
+
+    const changed = await ensureSkillFrontmatter(skillDir, 'empty');
+    expect(changed).toBe(false);
+  });
+
+  it('truncates very long descriptions', async () => {
+    const skillDir = path.join(tmpDir, 'long-desc');
+    await fse.ensureDir(skillDir);
+    const longLine = 'A'.repeat(100);
+    await fse.writeFile(path.join(skillDir, 'SKILL.md'), longLine);
+
+    const changed = await ensureSkillFrontmatter(skillDir, 'long-desc');
+    expect(changed).toBe(true);
+
+    const content = await fse.readFile(path.join(skillDir, 'SKILL.md'), 'utf-8');
+    const descMatch = content.match(/description: (.+)/);
+    expect(descMatch).toBeTruthy();
+    expect(descMatch![1].length).toBeLessThanOrEqual(80);
+    expect(descMatch![1]).toContain('...');
+  });
+
+  it('pushItem auto-injects frontmatter for skills without it', async () => {
+    const homeDir = path.join(tmpDir, 'home');
+    const repoPath = path.join(tmpDir, 'team-repo');
+    await fse.ensureDir(path.join(repoPath, 'skills'));
+    await fse.ensureDir(path.join(homeDir, '.claude', 'skills'));
+
+    const localSkillDir = path.join(homeDir, '.claude/skills', 'bare-skill');
+    await fse.ensureDir(localSkillDir);
+    await fse.writeFile(path.join(localSkillDir, 'SKILL.md'), '# Bare Skill\n\nNo frontmatter here.');
+
+    const handler = new SkillsHandler();
+    const teamConfig: TeamaiConfig = {
+      team: 'test',
+      description: '',
+      repo: 'https://git.woa.com/test/repo.git',
+      provider: 'tgit' as const,
+      reviewers: [],
+      sharing: { skills: {}, rules: { enforced: [] }, docs: { localDir: '' }, env: { injectShellProfile: true } },
+      toolPaths: { claude: { skills: '.claude/skills', rules: '.claude/rules' } },
+    };
+    const localConfig: LocalConfig = {
+      repo: { localPath: repoPath, remote: 'https://git.woa.com/test/repo.git' },
+      username: 'testuser',
+      updatePolicy: 'auto',
+      additionalRoles: [],
+      scope: 'user',
+    };
+
+    const item = {
+      name: 'bare-skill',
+      type: 'skills' as const,
+      sourcePath: localSkillDir,
+      relativePath: 'skills/bare-skill',
+    };
+
+    await handler.pushItem(item, teamConfig, localConfig);
+
+    // Verify frontmatter was injected in the team repo copy
+    const pushedContent = await fse.readFile(
+      path.join(repoPath, 'skills', 'bare-skill', 'SKILL.md'),
+      'utf-8',
+    );
+    expect(pushedContent).toMatch(/^---\nname: bare-skill\ndescription: Bare Skill\n---\n/);
   });
 });
