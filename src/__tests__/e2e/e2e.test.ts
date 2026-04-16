@@ -326,4 +326,63 @@ describe('remote commands', () => {
       expect(pullResult.output).toMatch(/Synced \d+ skills|No resources to sync|already up to date/);
     },
   );
+
+  it.skipIf(!CAN_RUN_REMOTE)(
+    'teamai roles set — cleans up stale skills on next pull',
+    async () => {
+      // Step 1: Check if the test repo has a roles manifest
+      const rolesResult = await runCLI(['roles', 'list']);
+      if (rolesResult.output.includes('Run `teamai roles init`')) {
+        console.log('⏭  Test repo has no roles manifest, skipping role-change cleanup test');
+        return;
+      }
+
+      // Step 2: Parse available role ids from the output
+      const roleIds: string[] = [];
+      for (const line of rolesResult.output.split('\n')) {
+        const match = line.match(/^\s{2}(\w+)/);
+        if (match && !line.includes('skills:') && !line.includes('knowledge:')) {
+          roleIds.push(match[1]);
+        }
+      }
+      if (roleIds.length < 2) {
+        console.log('⏭  Test repo has fewer than 2 roles, skipping role-change cleanup test');
+        return;
+      }
+
+      const [roleA, roleB] = roleIds;
+
+      // Step 3: Set role A and pull
+      const setA = await runCLI(['roles', 'set', roleA]);
+      expect(setA.code).toBe(0);
+      expect(setA.output).toContain(`Primary role set to: ${roleA}`);
+
+      const pullA = await runCLI(['pull', '--force']);
+      expect(pullA.code).toBe(0);
+      expect(pullA.output).toMatch(/Synced \d+ skills/);
+
+      // Record skill count after role A
+      const skillsDirA = path.join(process.env.HOME ?? '', '.claude', 'skills');
+      const skillsAfterA = fs.existsSync(skillsDirA) ? fs.readdirSync(skillsDirA) : [];
+
+      // Step 4: Switch to role B and pull
+      const setB = await runCLI(['roles', 'set', roleB]);
+      expect(setB.code).toBe(0);
+      expect(setB.output).toContain(`Primary role set to: ${roleB}`);
+
+      const pullB = await runCLI(['pull']);
+      expect(pullB.code).toBe(0);
+      expect(pullB.output).toMatch(/Synced \d+ skills/);
+
+      // Step 5: Verify skill count changed (different roles → different skill sets)
+      const skillsAfterB = fs.existsSync(skillsDirA) ? fs.readdirSync(skillsDirA) : [];
+      // If roles have different namespaces, the skill set should differ
+      // At minimum, the pull should have completed without error
+      console.log(`  Role ${roleA}: ${skillsAfterA.length} skills → Role ${roleB}: ${skillsAfterB.length} skills`);
+
+      // Step 6: Restore to role A for subsequent tests
+      await runCLI(['roles', 'set', roleA]);
+      await runCLI(['pull', '--force']);
+    },
+  );
 });

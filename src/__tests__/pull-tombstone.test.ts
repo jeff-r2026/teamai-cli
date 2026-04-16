@@ -293,4 +293,41 @@ describe('pull role-aware sync and cleanup', () => {
       { knowledge: ['common', 'hai'], skills: ['common', 'hai'] },
     )).rejects.toThrow(/Duplicate skill "shared-skill"/);
   });
+
+  it('cleans up stale skills after role change (full pull cycle)', async () => {
+    // Setup: create skills in all namespaces
+    await fse.ensureDir(path.join(repoPath, 'skills', 'common', 'shared-skill'));
+    await fse.writeFile(path.join(repoPath, 'skills', 'common', 'shared-skill', 'SKILL.md'), '# Shared');
+    await fse.ensureDir(path.join(repoPath, 'skills', 'hai', 'hai-only'));
+    await fse.writeFile(path.join(repoPath, 'skills', 'hai', 'hai-only', 'SKILL.md'), '# HAI Only');
+    await fse.ensureDir(path.join(repoPath, 'skills', 'pm', 'pm-only'));
+    await fse.writeFile(path.join(repoPath, 'skills', 'pm', 'pm-only', 'SKILL.md'), '# PM Only');
+
+    // Step 1: Pull as hai role — should get common + hai skills
+    await pull({});
+
+    expect(await fse.pathExists(path.join(homeDir, '.claude/skills', 'shared-skill', 'SKILL.md'))).toBe(true);
+    expect(await fse.pathExists(path.join(homeDir, '.claude/skills', 'hai-only', 'SKILL.md'))).toBe(true);
+    expect(await fse.pathExists(path.join(homeDir, '.claude/skills', 'pm-only'))).toBe(false);
+
+    // Step 2: Switch to pm role (simulate what `roles set pm` does)
+    const pmConfig: LocalConfig = {
+      repo: { localPath: repoPath, remote: 'https://git.woa.com/test/repo.git' },
+      username: 'testuser',
+      updatePolicy: 'auto',
+      primaryRole: 'pm',
+      additionalRoles: [],
+      resourceProfileVersion: 1,
+      scope: 'user',
+    };
+    vi.mocked(loadLocalConfigForScope).mockResolvedValue(pmConfig);
+
+    // Step 3: Pull as pm role — should get common + pm, remove hai-only
+    await pull({});
+
+    expect(await fse.pathExists(path.join(homeDir, '.claude/skills', 'shared-skill', 'SKILL.md'))).toBe(true);
+    expect(await fse.pathExists(path.join(homeDir, '.claude/skills', 'pm-only', 'SKILL.md'))).toBe(true);
+    // hai-only should be cleaned up
+    expect(await fse.pathExists(path.join(homeDir, '.claude/skills', 'hai-only'))).toBe(false);
+  });
 });

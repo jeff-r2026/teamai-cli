@@ -1,6 +1,6 @@
 import path from 'node:path';
 import YAML from 'yaml';
-import { autoDetectInit, loadLocalConfig, saveLocalConfig, loadTeamConfig, saveLocalConfigForScope } from './config.js';
+import { autoDetectInit, loadLocalConfig, saveLocalConfig, loadTeamConfig, saveLocalConfigForScope, loadStateForScope, saveStateForScope } from './config.js';
 import { loadRolesManifest, saveRolesManifest, findRole, describeRoles, listRoleIds } from './roles.js';
 import type { RolesManifest, TeamRole } from './roles.js';
 import { pullRepo, pushRepoBranch, checkoutMaster, generateBranchName } from './utils/git.js';
@@ -267,6 +267,15 @@ export async function rolesSet(
         await saveLocalConfigForScope(updatedConfig, localConfig.scope, localConfig.projectRoot);
     } else {
         await saveLocalConfig(updatedConfig);
+    }
+
+    // Invalidate pull cache so next pull does full sync with cleanup
+    try {
+        const state = await loadStateForScope(localConfig.scope, localConfig.projectRoot);
+        state.lastPullRev = null;
+        await saveStateForScope(state, localConfig.scope, localConfig.projectRoot);
+    } catch {
+        // Non-critical: if state doesn't exist yet, next pull will do full sync anyway
     }
 
     log.success(`Primary role set to: ${primaryRole}`);

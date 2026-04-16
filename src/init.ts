@@ -1,6 +1,6 @@
 import YAML from 'yaml';
 import path from 'node:path';
-import { saveLocalConfig, loadTeamConfig, saveLocalConfigForScope } from './config.js';
+import { saveLocalConfig, loadTeamConfig, saveLocalConfigForScope, loadStateForScope, saveStateForScope } from './config.js';
 import { injectHooksToAllTools } from './hooks.js';
 import { configureGitUser, initRepo } from './utils/git.js';
 import { pushRepoDirectly } from './utils/git.js';
@@ -411,6 +411,16 @@ export async function init(options: GlobalOptions & { repo?: string; scope?: str
     await ensureDir(TEAMAI_HOME);
     await saveLocalConfig(localConfig);
     log.success(`Local config saved to ${TEAMAI_HOME}/config.yaml`);
+  }
+
+  // Step 6.5: Invalidate pull cache so next pull does full sync with cleanup
+  // This handles re-init scenarios where the user changes their role
+  try {
+    const state = await loadStateForScope(scope, projectRoot);
+    state.lastPullRev = null;
+    await saveStateForScope(state, scope, projectRoot);
+  } catch {
+    // Non-critical: state file may not exist yet on first init
   }
 
   // Step 7: Inject hooks into AI tools
