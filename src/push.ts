@@ -6,7 +6,7 @@ import { getHandler } from './resources/index.js';
 import { scanTeamRepoNamespaces } from './resources/skills.js';
 import type { GlobalOptions, ResourceItem, ResourceType } from './types.js';
 import { loadRolesManifest, resolveRoleResourceNamespaces } from './roles.js';
-import { askQuestion, askConfirmation } from './utils/prompt.js';
+import { askQuestion, askSelection } from './utils/prompt.js';
 
 /**
  * Resolve available skill namespaces for the current user.
@@ -114,9 +114,47 @@ export async function push(options: GlobalOptions & { all?: boolean; role?: stri
     return;
   }
 
-  // Resolve namespace for NEW skills only.
-  // Modified skills already have their namespace set by scanLocalForPush.
-  const newSkills = allItems.filter((i) => i.type === 'skills' && i.status === 'new');
+  // ── Step 1: Display ALL scanned items with numbers ─────────────────
+  console.log('');
+  console.log(`Found ${allItems.length} resource(s) to push:`);
+  console.log('');
+  for (let i = 0; i < allItems.length; i++) {
+    const item = allItems[i];
+    const statusLabel = item.status === 'modified' ? ' (modified)' : ' (new)';
+    const num = `${i + 1}.`.padStart(4);
+    console.log(`  ${num} [${item.type}] ${item.name}${statusLabel}`);
+    console.log(`       from: ${item.sourcePath}`);
+    // Show destination for modified skills that already have a namespace
+    if (item.type === 'skills' && item.namespace) {
+      console.log(`       to:   skills/${item.namespace}/${item.name}`);
+    }
+  }
+  console.log('');
+
+  // ── Step 2: Dry run exits after display ────────────────────────────
+  if (options.dryRun) {
+    log.info('Dry run — no changes made');
+    return;
+  }
+
+  // ── Step 3: Item selection (replaces old Y/n confirmation) ─────────
+  let selectedItems: ResourceItem[];
+  if (options.all || options.silent) {
+    selectedItems = [...allItems];
+  } else {
+    const selectionPrompt = allItems.length === 1
+      ? 'Push this resource? [1/all/none] (default: all): '
+      : `Select items to push [1-${allItems.length}, or "all"] (default: all): `;
+    const indices = await askSelection(selectionPrompt, allItems.length, true);
+    if (!indices || indices.length === 0) {
+      log.info('Cancelled');
+      return;
+    }
+    selectedItems = indices.map((i) => allItems[i]);
+  }
+
+  // ── Step 4: Resolve namespace for NEW skills only (after selection) ─
+  const newSkills = selectedItems.filter((i) => i.type === 'skills' && i.status === 'new');
   let resolvedNamespaceForNew: string | undefined;
 
   if (newSkills.length > 0) {
@@ -200,46 +238,18 @@ export async function push(options: GlobalOptions & { all?: boolean; role?: stri
     }
   }
 
-  // Display items
-  console.log('');
-  console.log(`Found ${allItems.length} resource(s) to push:`);
-  console.log('');
-  for (const item of allItems) {
-    const statusLabel = item.status === 'modified' ? ' (modified)' : ' (new)';
-    console.log(`  [${item.type}] ${item.name}${statusLabel}`);
-    console.log(`    from: ${item.sourcePath}`);
-    if (item.type === 'skills' && item.namespace) {
-      console.log(`    to:   skills/${item.namespace}/${item.name}`);
-    }
-  }
-  console.log('');
-
-  if (options.dryRun) {
-    log.info('Dry run — no changes made');
-    return;
-  }
-
-  // Confirm
-  if (!options.all && !options.silent) {
-    const confirmed = await askConfirmation('Push these resources to team repo? [Y/n] ', true);
-    if (!confirmed) {
-      log.info('Cancelled');
-      return;
-    }
-  }
-
-  // Push each item to local repo
+  // ── Step 5: Push each selected item to local repo ──────────────────
   const pushSpin = spinner('Pushing resources...').start();
   const pushedFiles: string[] = [];
 
-  for (const item of allItems) {
+  for (const item of selectedItems) {
     const handler = getHandler(item.type);
     await handler.pushItem(item, teamConfig, localConfig);
     pushedFiles.push(item.relativePath);
   }
 
   // Refresh marketplace.json if it exists and skills were pushed
-  if (allItems.some((i) => i.type === 'skills')) {
+  if (selectedItems.some((i) => i.type === 'skills')) {
     try {
       const { refreshMarketplace } = await import('./resources/marketplace.js');
       const updated = await refreshMarketplace(localConfig.repo.localPath);
@@ -260,7 +270,7 @@ export async function push(options: GlobalOptions & { all?: boolean; role?: stri
       'env/',
     ])];
     const branchName = generateBranchName(localConfig.username);
-    const commitMsg = `[teamai] Push ${allItems.length} resource(s) from ${localConfig.username}`;
+    const commitMsg = `[teamai] Push ${selectedItems.length} resource(s) from ${localConfig.username}`;
 
     const hasChanges = await pushRepoBranch(
       localConfig.repo.localPath,
@@ -282,7 +292,7 @@ export async function push(options: GlobalOptions & { all?: boolean; role?: stri
       localConfig,
       branchName,
       commitMsg,
-      `Pushed ${allItems.length} resource(s):\n${allItems.map((i) => `- [${i.type}] ${i.name}`).join('\n')}`,
+      `Pushed ${selectedItems.length} resource(s):\n${selectedItems.map((i) => `- [${i.type}] ${i.name}`).join('\n')}`,
     );
 
     // Switch back to master after PR creation
@@ -295,7 +305,7 @@ export async function push(options: GlobalOptions & { all?: boolean; role?: stri
   // Update state
   const state = await loadStateForScope(localConfig.scope, localConfig.projectRoot);
   state.lastPush = new Date().toISOString();
-  for (const item of allItems) {
+  for (const item of selectedItems) {
     if (item.type === 'skills' && !state.pushedSkills.includes(item.name)) {
       state.pushedSkills.push(item.name);
     }

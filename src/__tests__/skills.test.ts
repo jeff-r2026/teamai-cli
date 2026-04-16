@@ -117,7 +117,9 @@ scope: 'user',
     expect(names).not.toContain('same-skill');
   });
 
-  it('should detect modification when skill has extra file locally', async () => {
+  it('should NOT detect modification when skill only has extra files locally', async () => {
+    // Extra local files (scripts, agents, etc.) should not trigger "modified" status.
+    // Only changes to files that exist in the team repo should count.
     const teamSkillDir = path.join(localConfig.repo.localPath, 'skills', 'my-skill');
     await fse.ensureDir(teamSkillDir);
     await fse.writeFile(path.join(teamSkillDir, 'SKILL.md'), '# Skill');
@@ -126,6 +128,20 @@ scope: 'user',
     await fse.ensureDir(localSkillDir);
     await fse.writeFile(path.join(localSkillDir, 'SKILL.md'), '# Skill');
     await fse.writeFile(path.join(localSkillDir, 'helper.sh'), 'echo hi');
+
+    const items = await handler.scanLocalForPush(teamConfig, localConfig);
+    const names = items.map((i) => i.name);
+    expect(names).not.toContain('my-skill');
+  });
+
+  it('should detect modification when team repo file content differs', async () => {
+    const teamSkillDir = path.join(localConfig.repo.localPath, 'skills', 'my-skill');
+    await fse.ensureDir(teamSkillDir);
+    await fse.writeFile(path.join(teamSkillDir, 'SKILL.md'), '# Skill v1');
+
+    const localSkillDir = path.join(homeDir, '.claude/skills', 'my-skill');
+    await fse.ensureDir(localSkillDir);
+    await fse.writeFile(path.join(localSkillDir, 'SKILL.md'), '# Skill v2');
 
     const items = await handler.scanLocalForPush(teamConfig, localConfig);
     const item = items.find((i) => i.name === 'my-skill');

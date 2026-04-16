@@ -21,6 +21,12 @@ vi.mock('../utils/prompt.js', () => ({
       !readlineAnswer || readlineAnswer.toLowerCase() === 'y',
     );
   }),
+  askSelection: vi.fn((_prompt: string, itemCount: number, defaultAll?: boolean) => {
+    // Default: select all items (matches --all behavior for existing tests)
+    if (defaultAll) return Promise.resolve(Array.from({ length: itemCount }, (__, i) => i));
+    return Promise.resolve(null);
+  }),
+  parseSelection: vi.fn(),
   closePrompt: vi.fn(),
 }));
 
@@ -407,7 +413,7 @@ it('blocks skills that exist in non-allowed namespaces', async () => {
     expect(pushedItems[0].relativePath).toBe('skills/tencent/skill-a');
   });
 
-  it('shows destination path in item display', async () => {
+  it('shows numbered items in display', async () => {
     const consoleSpy = vi.spyOn(console, 'log');
     mockAutoDetectInit.mockResolvedValue({
       localConfig: makeLocalConfig(),
@@ -418,11 +424,11 @@ it('blocks skills that exist in non-allowed namespaces', async () => {
     readlineAnswer = '2';
     await push({ all: true });
 
-    const toLine = consoleSpy.mock.calls.find(
-      (args) => typeof args[0] === 'string' && args[0].includes('to:'),
+    // Verify numbered display format
+    const numLine = consoleSpy.mock.calls.find(
+      (args) => typeof args[0] === 'string' && args[0].includes('1.') && args[0].includes('skill-a'),
     );
-    expect(toLine).toBeDefined();
-    expect(toLine![0]).toContain('skills/hai/skill-a');
+    expect(numLine).toBeDefined();
     consoleSpy.mockRestore();
   });
 
@@ -443,5 +449,148 @@ it('blocks skills that exist in non-allowed namespaces', async () => {
     const resetOrder = mockResetToCleanMaster.mock.invocationCallOrder[0];
     const pullOrder = mockPullRepo.mock.invocationCallOrder[0];
     expect(resetOrder).toBeLessThan(pullOrder);
+  });
+});
+
+describe('push item selection', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPullRepo.mockResolvedValue('Already up to date.');
+    mockPushRepoBranch.mockResolvedValue(true);
+    mockCheckoutMaster.mockResolvedValue(undefined);
+    mockGenerateBranchName.mockReturnValue('teamai/push/test/20260403-120000');
+    mockLoadStateForScope.mockResolvedValue({
+      lastPush: null,
+      lastPull: null,
+      pushedRules: [],
+      pushedSkills: [],
+      pushedEnvVars: [],
+      lastUpdateCheck: null,
+      availableUpdate: null,
+    });
+    mockSaveStateForScope.mockResolvedValue(undefined);
+    mockLoadRolesManifest.mockResolvedValue({
+      version: 1,
+      roles: [
+        { id: 'hai', description: 'HyperAI', resources: { knowledge: ['common', 'hai'], skills: ['common', 'hai'] } },
+      ],
+    });
+    readlineAnswer = '1';
+    mockScanTeamRepoNamespaces.mockResolvedValue([]);
+  });
+
+  it('pushes only selected items when user picks a subset', async () => {
+    const pushedItems: Array<Record<string, unknown>> = [];
+    mockAutoDetectInit.mockResolvedValue({
+      localConfig: makeLocalConfig({ primaryRole: undefined }),
+      teamConfig: makeTeamConfig(),
+    });
+    // Return 2 modified skills (no namespace prompt needed)
+    mockGetHandler.mockImplementation((type: string) => {
+      if (type === 'skills') {
+        return {
+          scanLocalForPush: vi.fn().mockResolvedValue([
+            { name: 'skill-a', type: 'skills', sourcePath: '/tmp/skill-a', relativePath: 'skills/ns/skill-a', status: 'modified', namespace: 'ns' },
+            { name: 'skill-b', type: 'skills', sourcePath: '/tmp/skill-b', relativePath: 'skills/ns/skill-b', status: 'modified', namespace: 'ns' },
+          ]),
+          pushItem: vi.fn().mockImplementation(async (item: Record<string, unknown>) => {
+            pushedItems.push(item);
+          }),
+        };
+      }
+      return { scanLocalForPush: vi.fn().mockResolvedValue([]), pushItem: vi.fn() };
+    });
+
+    // Mock askSelection to select only the first item
+    const { askSelection } = await import('../utils/prompt.js');
+    vi.mocked(askSelection).mockResolvedValueOnce([0]);
+
+    await push({}); // No --all flag → triggers selection
+
+    expect(pushedItems).toHaveLength(1);
+    expect(pushedItems[0].name).toBe('skill-a');
+  });
+
+  it('cancels when user selects none', async () => {
+    mockAutoDetectInit.mockResolvedValue({
+      localConfig: makeLocalConfig({ primaryRole: undefined }),
+      teamConfig: makeTeamConfig(),
+    });
+    mockSkillHandler();
+    mockScanTeamRepoNamespaces.mockResolvedValue([]);
+
+    // Mock askSelection to return null (cancel)
+    const { askSelection } = await import('../utils/prompt.js');
+    vi.mocked(askSelection).mockResolvedValueOnce(null);
+
+    await push({}); // No --all flag
+
+    expect(mockPushRepoBranch).not.toHaveBeenCalled();
+  });
+
+  it('skips namespace prompt when only modified skills are selected', async () => {
+    const pushedItems: Array<Record<string, unknown>> = [];
+    mockAutoDetectInit.mockResolvedValue({
+      localConfig: makeLocalConfig(),
+      teamConfig: makeTeamConfig(),
+    });
+    // Return one new and one modified skill
+    mockGetHandler.mockImplementation((type: string) => {
+      if (type === 'skills') {
+        return {
+          scanLocalForPush: vi.fn().mockResolvedValue([
+            { name: 'new-skill', type: 'skills', sourcePath: '/tmp/new-skill', relativePath: 'skills/new-skill', status: 'new' },
+            { name: 'mod-skill', type: 'skills', sourcePath: '/tmp/mod-skill', relativePath: 'skills/hai/mod-skill', status: 'modified', namespace: 'hai' },
+          ]),
+          pushItem: vi.fn().mockImplementation(async (item: Record<string, unknown>) => {
+            pushedItems.push(item);
+          }),
+        };
+      }
+      return { scanLocalForPush: vi.fn().mockResolvedValue([]), pushItem: vi.fn() };
+    });
+
+    // User selects only item 2 (the modified skill, index 1)
+    const { askSelection } = await import('../utils/prompt.js');
+    vi.mocked(askSelection).mockResolvedValueOnce([1]);
+
+    await push({});
+
+    // Should only push the modified skill, namespace prompt should not fire
+    expect(pushedItems).toHaveLength(1);
+    expect(pushedItems[0].name).toBe('mod-skill');
+    expect(pushedItems[0].namespace).toBe('hai');
+  });
+
+  it('--all flag skips selection prompt', async () => {
+    const pushedItems: Array<Record<string, unknown>> = [];
+    mockAutoDetectInit.mockResolvedValue({
+      localConfig: makeLocalConfig({ primaryRole: undefined }),
+      teamConfig: makeTeamConfig(),
+    });
+    mockGetHandler.mockImplementation((type: string) => {
+      if (type === 'skills') {
+        return {
+          scanLocalForPush: vi.fn().mockResolvedValue([
+            { name: 'skill-a', type: 'skills', sourcePath: '/tmp/skill-a', relativePath: 'skills/ns/skill-a', status: 'modified', namespace: 'ns' },
+            { name: 'skill-b', type: 'skills', sourcePath: '/tmp/skill-b', relativePath: 'skills/ns/skill-b', status: 'modified', namespace: 'ns' },
+          ]),
+          pushItem: vi.fn().mockImplementation(async (item: Record<string, unknown>) => {
+            pushedItems.push(item);
+          }),
+        };
+      }
+      return { scanLocalForPush: vi.fn().mockResolvedValue([]), pushItem: vi.fn() };
+    });
+
+    const { askSelection } = await import('../utils/prompt.js');
+    vi.mocked(askSelection).mockClear();
+
+    await push({ all: true });
+
+    // askSelection should NOT have been called
+    expect(askSelection).not.toHaveBeenCalled();
+    // But all items should have been pushed
+    expect(pushedItems).toHaveLength(2);
   });
 });

@@ -258,6 +258,45 @@ export async function dirContentEqual(dirA: string, dirB: string, ignore?: strin
 }
 
 /**
+ * Team-repo-centric directory comparison.
+ * Returns true if every file in `teamDir` exists in `localDir` with identical content.
+ * Extra files in `localDir` (e.g. scripts/, agents/, references/) are ignored.
+ * This prevents false-positive "modified" detection when the local copy has
+ * additional enhancement files that the team repo version does not.
+ *
+ * Returns false if `teamDir` does not exist (nothing to compare against).
+ * Returns false if `localDir` does not exist (local copy missing).
+ */
+export async function dirTeamSubsetEqual(
+  localDir: string,
+  teamDir: string,
+  ignore?: string[],
+): Promise<boolean> {
+  const expandedLocal = expandHome(localDir);
+  const expandedTeam = expandHome(teamDir);
+
+  if (!await fse.pathExists(expandedLocal) || !await fse.pathExists(expandedTeam)) return false;
+
+  const ignoreSet = ignore ? new Set(ignore) : undefined;
+
+  // Collect files from team repo only — this is the "source of truth" file set
+  const teamFiles = await collectFiles(expandedTeam, '', ignoreSet);
+
+  if (teamFiles.size === 0) return true; // Empty team dir matches anything
+
+  // Check that every team file exists in local with identical content
+  for (const rel of teamFiles) {
+    const equal = await fileContentEqual(
+      path.join(expandedLocal, rel),
+      path.join(expandedTeam, rel),
+    );
+    if (!equal) return false;
+  }
+
+  return true;
+}
+
+/**
  * Recursively collect all relative file paths under a directory.
  */
 async function collectFiles(base: string, prefix: string, ignore?: Set<string>): Promise<Set<string>> {

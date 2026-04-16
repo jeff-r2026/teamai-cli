@@ -2,7 +2,7 @@ import path from 'node:path';
 import { ResourceHandler } from './base.js';
 import type { ResourceItem, ResourceItemStatus, TeamaiConfig, LocalConfig } from '../types.js';
 import { resolveBaseDir, getPushignorePath } from '../types.js';
-import { listDirs, pathExists, copyDir, remove, dirContentEqual, getDirLatestMtime, readFileSafe, writeFile } from '../utils/fs.js';
+import { listDirs, pathExists, copyDir, remove, dirTeamSubsetEqual, getDirLatestMtime, readFileSafe, writeFile } from '../utils/fs.js';
 import { log } from '../utils/logger.js';
 import { BUILTIN_SKILL_NAMES } from '../builtin-skills.js';
 import { loadRolesManifest, resolveRoleResourceNamespaces } from '../roles.js';
@@ -250,7 +250,7 @@ export class SkillsHandler extends ResourceHandler {
         if (teamSkills.has(dir)) {
           // Skill exists in team repo — check if content differs
           const teamDirPath = teamSkills.get(dir)!.dir;
-          const equal = await dirContentEqual(localDirPath, teamDirPath, [CONTRIBUTORS_FILE]);
+          const equal = await dirTeamSubsetEqual(localDirPath, teamDirPath, [CONTRIBUTORS_FILE]);
           if (equal) continue; // This tool dir's copy is identical, skip
 
           // Content differs — candidate for "modified"
