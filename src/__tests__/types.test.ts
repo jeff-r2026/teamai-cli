@@ -62,7 +62,7 @@ describe('TeamaiConfigSchema', () => {
       skills: '.codebuddy/skills',
       rules: '.codebuddy/rules',
       settings: '.codebuddy/settings.json',
-      claudemd: '.codebuddy/CLAUDE.md',
+      claudemd: '.codebuddy/CODEBUDDY.md',
     });
   });
 

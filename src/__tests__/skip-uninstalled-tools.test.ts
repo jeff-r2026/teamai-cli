@@ -318,7 +318,7 @@ describe('RulesHandler.pullAllRules — skip CLAUDE.md update for uninstalled to
       },
       toolPaths: {
         claude: { skills: '.claude/skills', rules: '.claude/rules', claudemd: '.claude/CLAUDE.md' },
-        codebuddy: { skills: '.codebuddy/skills', rules: '.codebuddy/rules', claudemd: '.codebuddy/CLAUDE.md' },
+        codebuddy: { skills: '.codebuddy/skills', rules: '.codebuddy/rules', claudemd: '.codebuddy/CODEBUDDY.md' },
       },
     };
 
