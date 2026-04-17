@@ -208,14 +208,68 @@ export function getDashboardHtml(port: number): string {
       background: var(--bg);
       border-radius: 4px;
       border-left: 3px solid var(--blue);
-      white-space: pre-wrap;
       word-break: break-word;
-      max-height: 80px;
+      max-height: 150px;
       overflow: hidden;
     }
     .stopped-output.waiting-output {
       border-left-color: var(--yellow);
     }
+
+    /* Card section labels */
+    .card-section { margin-bottom: 8px; }
+    .card-section-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    /* Markdown rendered output inside cards */
+    .md-output { font-size: 12px; color: var(--text); line-height: 1.5; }
+    .md-output h1 { font-size: 14px; font-weight: 600; margin: 6px 0 4px; }
+    .md-output h2 { font-size: 13px; font-weight: 600; margin: 5px 0 3px; }
+    .md-output h3 { font-size: 12px; font-weight: 600; margin: 4px 0 2px; }
+    .md-output h4 { font-size: 12px; font-weight: 600; margin: 3px 0 2px; color: var(--text-muted); }
+    .md-output p { margin: 4px 0; }
+    .md-output ul { margin: 4px 0; padding-left: 18px; }
+    .md-output li { margin: 2px 0; }
+    .md-output code {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 11px;
+      background: var(--surface);
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+    .md-output pre {
+      background: var(--surface);
+      border-radius: 4px;
+      padding: 8px;
+      margin: 4px 0;
+      overflow-x: auto;
+      font-size: 11px;
+      line-height: 1.4;
+    }
+    .md-output pre code { background: none; padding: 0; }
+    .md-output table {
+      border-collapse: collapse;
+      margin: 4px 0;
+      font-size: 11px;
+      width: 100%;
+    }
+    .md-output th, .md-output td {
+      border: 1px solid var(--border);
+      padding: 3px 6px;
+      text-align: left;
+    }
+    .md-output th {
+      background: var(--surface);
+      font-weight: 600;
+    }
+    .md-output b, .md-output strong { font-weight: 600; }
+    .md-output em, .md-output i { font-style: italic; color: var(--text-muted); }
     .card-footer {
       display: flex;
       align-items: center;
@@ -269,9 +323,8 @@ export function getDashboardHtml(port: number): string {
       background: var(--bg);
       border-radius: 4px;
       border-left: 3px solid var(--green);
-      white-space: pre-wrap;
       word-break: break-word;
-      max-height: 200px;
+      max-height: 300px;
       overflow-y: auto;
     }
     .expand-hint {
@@ -366,6 +419,93 @@ export function getDashboardHtml(port: number): string {
       return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
+    // ─── Lightweight inline markdown parser ─────────────
+    // Backtick char via hex escape (cannot use literal backtick inside TS template)
+    var BT = '\\x60';
+    var FENCE = BT + BT + BT;
+    var reInlineCode = new RegExp(BT + '([^' + BT + ']+)' + BT, 'g');
+
+    function inlineMarkdown(text) {
+      return text
+        .replace(reInlineCode, '<code>\$1</code>')
+        .replace(/\\*\\*(.+?)\\*\\*/g, '<b>\$1</b>')
+        .replace(/\\*(.+?)\\*/g, '<i>\$1</i>');
+    }
+
+    function renderMarkdown(raw) {
+      if (!raw) return '';
+      var safe = escapeHtml(raw);
+      var lines = safe.split('\\n');
+      var out = '';
+      var i = 0;
+
+      while (i < lines.length) {
+        var line = lines[i];
+
+        // Fenced code block
+        if (line.trimStart().startsWith(FENCE)) {
+          var codeLines = [];
+          i++;
+          while (i < lines.length && !lines[i].trimStart().startsWith(FENCE)) {
+            codeLines.push(lines[i]);
+            i++;
+          }
+          i++; // skip closing fence
+          out += '<pre><code>' + codeLines.join('\\n') + '</code></pre>';
+          continue;
+        }
+
+        // Table row (starts with |)
+        if (line.trim().startsWith('|')) {
+          var tableRows = [];
+          while (i < lines.length && lines[i].trim().startsWith('|')) {
+            var row = lines[i].trim();
+            // Skip separator rows (|---|---|)
+            if (/^\\|[\\s:|-]+\\|$/.test(row)) { i++; continue; }
+            var cells = row.split('|').filter(function(c, idx, arr) {
+              return idx > 0 && idx < arr.length - 1;
+            }).map(function(c) { return c.trim(); });
+            tableRows.push(cells);
+            i++;
+          }
+          if (tableRows.length > 0) {
+            out += '<table>';
+            out += '<tr>' + tableRows[0].map(function(c) { return '<th>' + inlineMarkdown(c) + '</th>'; }).join('') + '</tr>';
+            for (var r = 1; r < tableRows.length; r++) {
+              out += '<tr>' + tableRows[r].map(function(c) { return '<td>' + inlineMarkdown(c) + '</td>'; }).join('') + '</tr>';
+            }
+            out += '</table>';
+          }
+          continue;
+        }
+
+        // Headers
+        if (line.startsWith('#### ')) { out += '<h4>' + inlineMarkdown(line.slice(5)) + '</h4>'; i++; continue; }
+        if (line.startsWith('### '))  { out += '<h3>' + inlineMarkdown(line.slice(4)) + '</h3>'; i++; continue; }
+        if (line.startsWith('## '))   { out += '<h2>' + inlineMarkdown(line.slice(3)) + '</h2>'; i++; continue; }
+        if (line.startsWith('# '))    { out += '<h1>' + inlineMarkdown(line.slice(2)) + '</h1>'; i++; continue; }
+
+        // Unordered list
+        if (/^[\\-\\*] /.test(line.trim())) {
+          out += '<ul>';
+          while (i < lines.length && /^[\\-\\*] /.test(lines[i].trim())) {
+            out += '<li>' + inlineMarkdown(lines[i].trim().slice(2)) + '</li>';
+            i++;
+          }
+          out += '</ul>';
+          continue;
+        }
+
+        // Blank line
+        if (!line.trim()) { i++; continue; }
+
+        // Plain paragraph
+        out += '<p>' + inlineMarkdown(line) + '</p>';
+        i++;
+      }
+      return out;
+    }
+
     function toggleCard(sessionId) {
       if (expandedCards.has(sessionId)) {
         expandedCards.delete(sessionId);
@@ -406,6 +546,7 @@ export function getDashboardHtml(port: number): string {
       const isStopped = s.status === 'stopped';
       const dur = durationStr(s.startedAt, isStopped ? s.stoppedAt || s.lastActivity : null);
 
+      // ─── Expanded detail panel ───
       let detail = '';
       if (isExpanded) {
         let promptsHtml = '';
@@ -416,15 +557,36 @@ export function getDashboardHtml(port: number): string {
         let outputHtml = '';
         if (s.stoppedOutput) {
           outputHtml = '<div class="detail-label">AI Output</div>' +
-            '<div class="ai-output">' + escapeHtml(s.stoppedOutput) + '</div>';
+            '<div class="ai-output md-output">' + renderMarkdown(s.stoppedOutput) + '</div>';
         }
         detail = '<div class="card-detail open">' + promptsHtml + outputHtml + '</div>';
       }
 
-      const hasOutputPreview = (isStopped || s.status === 'waiting_for_input') && s.stoppedOutput && !isExpanded;
-      const outputPreviewClass = s.status === 'waiting_for_input' ? 'stopped-output waiting-output' : 'stopped-output';
-      const stoppedOutputPreview = hasOutputPreview
-        ? '<div class="' + outputPreviewClass + '">' + escapeHtml(s.stoppedOutput) + '</div>'
+      // ─── Default card sections (always visible) ───
+      // 1. AI Output (with markdown rendering)
+      const outputBorderClass = s.status === 'waiting_for_input' ? 'stopped-output waiting-output' : 'stopped-output';
+      const aiOutputSection = s.stoppedOutput
+        ? '<div class="card-section">' +
+            '<div class="card-section-label">AI Output</div>' +
+            '<div class="' + outputBorderClass + ' md-output">' + renderMarkdown(s.stoppedOutput) + '</div>' +
+          '</div>'
+        : '';
+
+      // 2. First question
+      const firstQuestionSection = s.promptSummary
+        ? '<div class="card-section">' +
+            '<div class="card-section-label">First Question</div>' +
+            '<div class="prompt-summary">' + escapeHtml(s.promptSummary) + '</div>' +
+          '</div>'
+        : '';
+
+      // 3. Last question (only if different from first)
+      const lastPrompt = s.prompts && s.prompts.length > 1 ? s.prompts[s.prompts.length - 1] : '';
+      const lastQuestionSection = lastPrompt
+        ? '<div class="card-section">' +
+            '<div class="card-section-label">Last Question</div>' +
+            '<div class="prompt-summary">' + escapeHtml(lastPrompt) + '</div>' +
+          '</div>'
         : '';
 
       return '<div class="card ' + (isStopped ? 'stopped' : '') + '" data-session-id="' + escapeAttr(s.sessionId) + '">'+
@@ -435,8 +597,9 @@ export function getDashboardHtml(port: number): string {
           '<span class="status-text">' + statusLabel(s.status) + '</span>' +
         '</div>' +
         '<div class="cwd" title="' + escapeAttr(s.cwd) + '">' + escapeHtml(shortPath(s.cwd)) + '</div>' +
-        (s.promptSummary ? '<div class="prompt-summary">' + escapeHtml(s.promptSummary) + '</div>' : '') +
-        stoppedOutputPreview +
+        aiOutputSection +
+        firstQuestionSection +
+        lastQuestionSection +
         '<div class="card-footer">' +
           '<span>' + timeAgo(s.lastActivity) + '</span>' +
           (s.lastTool ? '<span class="last-tool">' + s.lastTool + '</span>' : '') +
