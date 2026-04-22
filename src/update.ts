@@ -1,4 +1,3 @@
-import { createRequire } from 'node:module';
 import { execSync } from 'node:child_process';
 import fse from 'fs-extra';
 import { loadState, saveState, loadLocalConfig } from './config.js';
@@ -6,6 +5,13 @@ import { log } from './utils/logger.js';
 import { expandHome } from './utils/fs.js';
 import { TEAMAI_UPDATE_LOCK_PATH } from './types.js';
 import { askConfirmation } from './utils/prompt.js';
+
+// `getCurrentVersion` and `getCurrentPackageName` live in `./package-info.ts`
+// so both this module and the provider registry can read package metadata
+// without pulling in update.ts' dependency graph. They are re-exported here
+// for backwards compatibility with existing callers of `./update.js`.
+import { getCurrentVersion, getCurrentPackageName } from './package-info.js';
+export { getCurrentVersion, getCurrentPackageName };
 
 // ─── Constants ──────────────────────────────────────────
 
@@ -19,25 +25,6 @@ const INSTALL_TIMEOUT = 60000;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 // ─── Helpers ────────────────────────────────────────────
-
-/**
- * Get the currently installed version from package.json
- */
-export function getCurrentVersion(): string {
-  const require = createRequire(import.meta.url);
-  const { version } = require('../package.json');
-  return version as string;
-}
-
-/**
- * Get the currently installed package name from package.json.
- * Used to decide which registry to query (public npm vs tnpm).
- */
-export function getCurrentPackageName(): string {
-  const require = createRequire(import.meta.url);
-  const { name } = require('../package.json');
-  return name as string;
-}
 
 /**
  * Resolve the npm registry to use for the given package name.
