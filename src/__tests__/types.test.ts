@@ -194,15 +194,41 @@ describe('StateSchema update fields', () => {
   });
 });
 
+describe('TeamaiConfigSchema autoUpdate', () => {
+  const base = {
+    team: 'test-team',
+    repo: 'https://git.woa.com/test/repo.git',
+  };
+
+  it('leaves autoUpdate undefined when not specified', () => {
+    const result = TeamaiConfigSchema.parse(base);
+    expect(result.autoUpdate).toBeUndefined();
+  });
+
+  it('parses autoUpdate: false', () => {
+    const result = TeamaiConfigSchema.parse({ ...base, autoUpdate: false });
+    expect(result.autoUpdate).toBe(false);
+  });
+
+  it('parses autoUpdate: true', () => {
+    const result = TeamaiConfigSchema.parse({ ...base, autoUpdate: true });
+    expect(result.autoUpdate).toBe(true);
+  });
+
+  it('rejects non-boolean autoUpdate', () => {
+    expect(() => TeamaiConfigSchema.parse({ ...base, autoUpdate: 'nope' })).toThrow();
+  });
+});
+
 describe('LocalConfigSchema updatePolicy', () => {
   const baseConfig = {
     repo: { localPath: '/tmp/repo', remote: 'https://git.woa.com/team/repo.git' },
     username: 'test',
   };
 
-  it('should default updatePolicy to auto', () => {
+  it('should leave updatePolicy undefined when not specified', () => {
     const result = LocalConfigSchema.parse(baseConfig);
-    expect(result.updatePolicy).toBe('auto');
+    expect(result.updatePolicy).toBeUndefined();
   });
 
   it('should accept auto, prompt, and skip values', () => {

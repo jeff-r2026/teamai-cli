@@ -20,6 +20,7 @@ vi.mock('../config.js', () => ({
   loadState: vi.fn(),
   saveState: vi.fn(),
   loadLocalConfig: vi.fn(),
+  loadTeamConfig: vi.fn(),
 }));
 
 vi.mock('../utils/logger.js', () => ({
@@ -58,7 +59,7 @@ vi.mock('../utils/prompt.js', () => ({
 
 import { execSync } from 'node:child_process';
 import fse from 'fs-extra';
-import { loadState, saveState, loadLocalConfig } from '../config.js';
+import { loadState, saveState, loadLocalConfig, loadTeamConfig } from '../config.js';
 import { log } from '../utils/logger.js';
 
 import {
@@ -78,6 +79,7 @@ const mockedExecSync = execSync as Mock;
 const mockedLoadState = loadState as Mock;
 const mockedSaveState = saveState as Mock;
 const mockedLoadLocalConfig = loadLocalConfig as Mock;
+const mockedLoadTeamConfig = loadTeamConfig as Mock;
 const mockedFse = fse as unknown as {
   pathExists: Mock;
   readFile: Mock;
@@ -116,6 +118,7 @@ beforeEach(() => {
     username: 'testuser',
     updatePolicy: 'auto',
   });
+  mockedLoadTeamConfig.mockResolvedValue(null);
   mockedFse.pathExists.mockResolvedValue(false);
   mockedFse.readFile.mockResolvedValue('');
   mockedFse.writeFile.mockResolvedValue(undefined);
@@ -348,6 +351,61 @@ describe('doUpdate', () => {
     expect(mockedExecSync).toHaveBeenCalledTimes(1);
     expect(mockedLog.debug).toHaveBeenCalledWith(
       expect.stringContaining('skip'),
+    );
+  });
+
+  // ─── Test: team-level autoUpdate=false with no local override → skip ───
+
+  it('should skip update when team autoUpdate=false and local updatePolicy is undefined', async () => {
+    mockedLoadLocalConfig.mockResolvedValue({
+      repo: { localPath: '/tmp/repo', remote: 'https://...' },
+      username: 'testuser',
+      // no updatePolicy — this is the new optional-field world
+    });
+    mockedLoadTeamConfig.mockResolvedValue({
+      team: 'test',
+      repo: 'https://...',
+      autoUpdate: false,
+    });
+    mockedExecSync.mockReturnValueOnce('99.0.0\n');  // the version check call
+
+    await doUpdate();
+
+    // Only the version-check execSync ran; no npm install
+    expect(mockedExecSync).toHaveBeenCalledTimes(1);
+    expect(mockedExecSync).not.toHaveBeenCalledWith(
+      expect.stringContaining('npm install'),
+      expect.anything(),
+    );
+    expect(mockedLog.debug).toHaveBeenCalledWith(
+      expect.stringContaining('team policy'),
+    );
+  });
+
+  // ─── Test: local updatePolicy beats team autoUpdate ───
+
+  it('should install when local updatePolicy=auto overrides team autoUpdate=false', async () => {
+    mockedFse.pathExists.mockResolvedValue(false);
+    mockedLoadLocalConfig.mockResolvedValue({
+      repo: { localPath: '/tmp/repo', remote: 'https://...' },
+      username: 'testuser',
+      updatePolicy: 'auto',
+    });
+    mockedLoadTeamConfig.mockResolvedValue({
+      team: 'test',
+      repo: 'https://...',
+      autoUpdate: false,
+    });
+    mockedExecSync
+      .mockReturnValueOnce('99.0.0\n')  // version check
+      .mockReturnValueOnce('')          // npm install
+      .mockReturnValueOnce('');         // hooks inject
+
+    await doUpdate();
+
+    expect(mockedExecSync).toHaveBeenCalledWith(
+      expect.stringContaining('npm install -g'),
+      expect.any(Object),
     );
   });
 

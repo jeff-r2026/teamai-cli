@@ -299,6 +299,17 @@ npm update -g teamai-cli   # 或手动触发 npm 升级
 
 如需手动覆盖 registry，可以设置环境变量 `TEAMAI_NPM_REGISTRY=<url>`。
 
+### Auto-Update Control
+
+Auto-update runs via the Stop hook at session end. Control it at two levels:
+
+| Config | File | Field | Values |
+|--------|------|-------|--------|
+| Team default | `teamai.yaml` | `autoUpdate` | `true` (default) / `false` |
+| User override | `~/.teamai/config.yaml` | `updatePolicy` | `auto` / `prompt` / `skip` |
+
+User `updatePolicy` always takes precedence over team `autoUpdate`.
+
 ## 许可证
 
 [MIT](LICENSE)

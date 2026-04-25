@@ -1,6 +1,7 @@
 import { execSync } from 'node:child_process';
 import fse from 'fs-extra';
-import { loadState, saveState, loadLocalConfig } from './config.js';
+import { loadState, saveState, loadLocalConfig, loadTeamConfig } from './config.js';
+import { resolveEffectiveUpdatePolicy } from './update-policy.js';
 import { log } from './utils/logger.js';
 import { expandHome } from './utils/fs.js';
 import { TEAMAI_UPDATE_LOCK_PATH } from './types.js';
@@ -193,12 +194,19 @@ export async function doUpdate(): Promise<void> {
     return;
   }
 
-  // Load config for update policy
+  // Load configs for update policy. Team config is the default; local
+  // config overrides (user always wins).
   const localConfig = await loadLocalConfig();
-  const policy = localConfig?.updatePolicy ?? 'auto';
+  const teamConfig = localConfig
+    ? await loadTeamConfig(localConfig.repo.localPath)
+    : null;
+  const policy = resolveEffectiveUpdatePolicy(localConfig, teamConfig);
 
   if (policy === 'skip') {
-    log.debug('Update policy is skip, skipping update');
+    const reason = teamConfig?.autoUpdate === false && localConfig?.updatePolicy === undefined
+      ? 'team policy (autoUpdate: false)'
+      : 'local updatePolicy: skip';
+    log.debug(`Auto-update skipped: ${reason}`);
     return;
   }
 

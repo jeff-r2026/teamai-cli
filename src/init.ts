@@ -361,7 +361,6 @@ export async function init(options: GlobalOptions & { repo?: string; scope?: str
   const localConfig: LocalConfig = {
     repo: { localPath, remote: repoInfo.httpsUrl },
     username,
-    updatePolicy: 'auto',
     scope,
     projectRoot,
     additionalRoles: [],

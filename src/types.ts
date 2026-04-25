@@ -87,6 +87,10 @@ export const TeamaiConfigSchema = z.object({
   /** External team repos to pull skills from. Managed by team admin. */
   sources: z.array(SourceConfigSchema).optional(),
   sharing: SharingConfigSchema.default({}),
+  /** Team-level default: whether `teamai update` auto-installs upgrades. Users
+   * can override via `updatePolicy` in local config. Undefined = team has no
+   * opinion (preserves legacy behavior). */
+  autoUpdate: z.boolean().optional(),
   toolPaths: z.record(z.string(), ToolPathsSchema).default({
     claude: { skills: '.claude/skills', rules: '.claude/rules', settings: '.claude/settings.json', claudemd: '.claude/CLAUDE.md', wiki: '.claude/wiki' },
     codex: { skills: '.codex/skills', rules: '.codex/rules' },
@@ -120,7 +124,7 @@ export const LocalConfigSchema = z.object({
     remote: z.string(),
   }),
   username: z.string(),
-  updatePolicy: z.enum(['auto', 'prompt', 'skip']).default('auto'),
+  updatePolicy: z.enum(['auto', 'prompt', 'skip']).optional(),
   scope: ScopeEnum.default('user'),
   primaryRole: z.string().min(1).optional(),
   additionalRoles: z.array(z.string()).default([]),
