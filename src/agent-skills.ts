@@ -148,6 +148,8 @@ export async function scanAgentSkills(agent: ResolvedAgent, ctx: ClassifyContext
 
   const dirs = await listDirs(agent.absoluteSkillsPath);
   for (const name of dirs) {
+    // Skip hidden directories (e.g. .system) and workspace scratch dirs
+    if (name.startsWith('.') || name.endsWith('-workspace')) continue;
     const skillDir = path.join(agent.absoluteSkillsPath, name);
     const skillMd = path.join(skillDir, 'SKILL.md');
     if (!await pathExists(skillMd)) continue;

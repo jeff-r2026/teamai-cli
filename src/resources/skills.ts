@@ -159,25 +159,47 @@ function getSkillDestination(localConfig: LocalConfig, skillName: string, namesp
  */
 async function scanSkillsRecursively(dirPath: string): Promise<Map<string, string>> {
   const results = new Map<string, string>();
-  
+
   async function walk(currentPath: string): Promise<void> {
     if (!await pathExists(currentPath)) return;
-    
+
     const entries = await listDirs(currentPath);
+
+    // Two-pass scan: first collect skills at this level (shallow),
+    // then recurse into non-skill subdirectories.
+    // This ensures shallow (flat) skills always win over deeper
+    // (namespace-nested) duplicates — the flat copy is the one synced
+    // by `teamai pull` and is authoritative.
+    const subdirs: string[] = [];
     for (const entry of entries) {
+      // Skip hidden directories (e.g. .system — Codex built-in skills)
+      // and workspace scratch directories (e.g. cls-log-workspace)
+      if (entry.startsWith('.') || entry.endsWith('-workspace')) continue;
+
       const entryPath = path.join(currentPath, entry);
       const skillMdPath = path.join(entryPath, SKILL_MD);
-      
+
       if (await pathExists(skillMdPath)) {
-        // This directory is a skill
-        results.set(entry, entryPath);
+        // Shallow-wins: do not override a skill already found at a
+        // shallower level. The flat copy (e.g. ~/.codebuddy/skills/my-skill/)
+        // is the one synced by `teamai pull` and is authoritative; a stale
+        // namespace copy (e.g. ~/.codebuddy/skills/hai_dev/my-skill/) must
+        // not shadow it.
+        if (!results.has(entry)) {
+          results.set(entry, entryPath);
+        }
       } else {
-        // Recursively scan subdirectories
-        await walk(entryPath);
+        subdirs.push(entryPath);
       }
     }
+
+    // Second pass: recurse into non-skill directories.
+    // Skills found deeper will NOT override those already found at this level.
+    for (const sub of subdirs) {
+      await walk(sub);
+    }
   }
-  
+
   await walk(dirPath);
   return results;
 }
@@ -285,7 +307,7 @@ export class SkillsHandler extends ResourceHandler {
 
       // Use recursive scanning to find all skills at any depth
       const localSkills = await scanSkillsRecursively(skillsDir);
-      
+
       for (const [dir, localDirPath] of localSkills) {
         if (tombstones.has(dir)) continue;
         if (pushIgnoredSkills.has(dir)) continue;
