@@ -1,5 +1,7 @@
 # TeamAI — 基于 Git 的团队 AI 经验共享工具
 
+> [English](README.en.md) | [简体中文](README.md)
+
 [![CI](https://github.com/Tencent/teamai-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Tencent/teamai-cli/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/teamai-cli.svg)](https://www.npmjs.com/package/teamai-cli)
 [![npm downloads](https://img.shields.io/npm/dm/teamai-cli.svg)](https://www.npmjs.com/package/teamai-cli)
