@@ -1,11 +1,34 @@
+# Dependencies & build output
 node_modules/
 dist/
 coverage/
 *.tgz
+pkgs/
+
+# OS / editor cruft
 .DS_Store
 __pycache__/
 *.pyc
-.worktrees/
+.ruff_cache/
+
+# Local secrets & env
 .npmrc
 .env
 .env.local
+
+# Local AI tool / agent workspaces (worktrees, scratch state)
+.claude/
+.gstack/
+.worktrees/
+
+# Local-only drafts and scratch notes (kept out of the open-source repo)
+eval/
+QUICK_REFERENCE.txt
+*-synced-*.txt
+docs/article.md
+docs/article-team-harness.md
+docs/article-team-harness.html
+docs/superpowers/
+docs/designs/auto-update.md
+docs/designs/ci-pipeline.md
+docs/designs/knowledge-feed.md
