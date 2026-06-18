@@ -967,11 +967,51 @@ async function collectClaudemdFiles(
 }
 
 /**
+ * Auto-migrate hooks from old individual format to unified hook-dispatch format.
+ * Runs at session start: if settings.json doesn't contain 'hook-dispatch' commands,
+ * it means the user updated the CLI but hooks are still in old format.
+ * Reinjects with the current version's hook definitions.
+ */
+async function autoMigrateHooksIfNeeded(): Promise<void> {
+  const home = process.env.HOME ?? '';
+  // Quick check: read the primary settings file and see if it has hook-dispatch
+  const primarySettings = path.join(home, '.claude', 'settings.json');
+  if (!await pathExists(primarySettings)) return;
+
+  const content = await readFileSafe(primarySettings);
+  if (!content) return;
+
+  // If hook-dispatch is already present, no migration needed
+  if (content.includes('hook-dispatch')) return;
+
+  // If no teamai hooks at all (user never ran init), skip
+  if (!content.includes('teamai')) return;
+
+  // Old format detected — reinject all tools
+  log.debug('Auto-migrating hooks to dispatch format...');
+  const { autoDetectInit } = await import('./config.js');
+  const { injectHooksToAllTools } = await import('./hooks.js');
+  const { localConfig, teamConfig } = await autoDetectInit();
+  const baseDir = resolveBaseDir(localConfig);
+  await injectHooksToAllTools(teamConfig.toolPaths, baseDir);
+  log.debug('Hooks migrated to dispatch format');
+}
+
+/**
  * Main pull entry point.
  * Implements Scheme B: user scope is always pulled (baseline),
  * project scope is additionally pulled if detected in cwd.
  */
 export async function pull(options: GlobalOptions): Promise<void> {
+  // 0. Auto-migrate hooks if settings.json has old format (pre-dispatch era).
+  //    This runs on the first session start after a CLI update — the new binary
+  //    detects the old individual hooks and reinjects the merged dispatch format.
+  try {
+    await autoMigrateHooksIfNeeded();
+  } catch {
+    // Non-fatal — pull continues even if hook migration fails
+  }
+
   // 1. Always try to pull user scope
   let userConfig: LocalConfig | null = null;
   try {
