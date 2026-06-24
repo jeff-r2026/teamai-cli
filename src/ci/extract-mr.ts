@@ -18,7 +18,8 @@ import { appendPendingReview } from '../review-store.js';
 import { pushRepoDirectly } from '../utils/git.js';
 import { log } from '../utils/logger.js';
 import type { LearningDraft, CodebaseSuggestion } from '../types.js';
-import { postOrUpdateMrComment } from './mr-comment.js';
+import { postOrUpdateMrComment, postIndividualComments, parseMrUrl } from './mr-comment.js';
+import { readRejections, shouldWrite } from './read-rejections.js';
 
 // ─── 类型 ────────────────────────────────────────────────
 
@@ -31,6 +32,62 @@ export interface CiExtractMrOptions {
   writeMode?: 'direct' | 'pending-review';
   output?: string;
   dryRun?: boolean;
+  individualComments?: boolean;
+}
+
+// ─── Git User 配置 ───────────────────────────────────────
+
+/**
+ * 自动配置 git user.name 和 user.email。
+ *
+ * 通过 provider API 获取当前 token 对应的用户信息：
+ * - GitHub: GITHUB_TOKEN → GET /user
+ * - TGit: TAI_PAT_TOKEN → GET /api/v3/user
+ */
+async function configureGitUser(repoPath: string, provider: 'github' | 'tgit'): Promise<void> {
+  const { execFileSync } = await import('node:child_process');
+  let name = 'teamai-ci';
+  let email = 'teamai-ci@noreply';
+
+  try {
+    if (provider === 'github') {
+      const token = process.env['GITHUB_TOKEN'];
+      if (token) {
+        const resp = await fetch('https://api.github.com/user', {
+          headers: { Authorization: `Bearer ${token}`, 'User-Agent': 'teamai-cli' },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (resp.ok) {
+          const user = (await resp.json()) as { login: string; email: string | null };
+          name = user.login;
+          email = user.email ?? `${user.login}@users.noreply.github.com`;
+        }
+      }
+    } else {
+      const token = process.env['TAI_PAT_TOKEN'];
+      if (token) {
+        const resp = await fetch('https://git.woa.com/api/v3/user', {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (resp.ok) {
+          const user = (await resp.json()) as { username: string; email: string };
+          name = user.username;
+          email = user.email;
+        }
+      }
+    }
+  } catch {
+    log.debug('无法获取用户信息，使用默认 git user');
+  }
+
+  try {
+    execFileSync('git', ['config', 'user.name', name], { cwd: repoPath, stdio: 'ignore' });
+    execFileSync('git', ['config', 'user.email', email], { cwd: repoPath, stdio: 'ignore' });
+    log.debug(`Git user: ${name} <${email}>`);
+  } catch {
+    log.debug('git config 失败（非 git 仓库），跳过');
+  }
 }
 
 // ─── 写入逻辑 ────────────────────────────────────────────
@@ -102,6 +159,8 @@ async function writeKnowledgeToRepo(
   // 提交并推送
   if (!dryRun && changedFiles.length > 0) {
     try {
+      const provider = mrUrl.includes('github.com') ? 'github' as const : 'tgit' as const;
+      await configureGitUser(teamRepo, provider);
       await pushRepoDirectly(teamRepo, `[teamai] CI extract knowledge from MR`, changedFiles);
       log.success('已推送到团队仓库');
     } catch (err) {
@@ -185,29 +244,62 @@ export async function ciExtractMr(opts: CiExtractMrOptions): Promise<void> {
 
   // 执行 comment
   if (opts.mode === 'comment' || opts.mode === 'both') {
-    const result = await postOrUpdateMrComment(
-      opts.url,
-      learning,
-      suggestions,
-      opts.commentMarker,
-      opts.dryRun,
-    );
-    if (result.created) {
-      log.success('MR comment 已发布');
+    if (opts.individualComments) {
+      const { posted } = await postIndividualComments(opts.url, learning, suggestions, opts.dryRun);
+      log.success(`已发布 ${posted} 条独立建议 comment`);
     } else {
-      log.success('MR comment 已更新');
-    }
-    if (result.url) {
-      log.info(`Comment URL: ${result.url}`);
+      const result = await postOrUpdateMrComment(
+        opts.url,
+        learning,
+        suggestions,
+        opts.commentMarker,
+        opts.dryRun,
+      );
+      if (result.created) {
+        log.success('MR comment 已发布');
+      } else {
+        log.success('MR comment 已更新');
+      }
+      if (result.url) {
+        log.info(`Comment URL: ${result.url}`);
+      }
     }
   }
 
   // 执行 write
   if (opts.mode === 'write' || opts.mode === 'both') {
+    // 当使用 individual comments 时，读取 rejection 状态进行过滤
+    let filteredLearning = learning;
+    let filteredSuggestions = suggestions;
+
+    if (opts.individualComments && !opts.dryRun) {
+      const parsed = parseMrUrl(opts.url);
+      const rejections = await readRejections(opts.url);
+
+      if (rejections.allIds.size > 0) {
+        // 过滤 learning
+        if (learning && !shouldWrite('learning', rejections, parsed.provider)) {
+          log.info('Learning 被 reject，跳过写入');
+          filteredLearning = undefined;
+        }
+
+        // 过滤 suggestions
+        if (suggestions) {
+          filteredSuggestions = suggestions.filter((_, i) =>
+            shouldWrite(`suggestion:${i + 1}`, rejections, parsed.provider),
+          );
+          const rejected = suggestions.length - filteredSuggestions.length;
+          if (rejected > 0) {
+            log.info(`${rejected} 条 codebase 建议被 reject，已排除`);
+          }
+        }
+      }
+    }
+
     await writeKnowledgeToRepo(
       opts.teamRepo!,
-      learning,
-      suggestions,
+      filteredLearning,
+      filteredSuggestions,
       opts.writeMode ?? 'direct',
       opts.url,
       opts.dryRun,
