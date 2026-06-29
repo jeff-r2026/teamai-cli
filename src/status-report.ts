@@ -333,6 +333,9 @@ async function runStatusReportInner(opts: StatusReportOptions): Promise<void> {
   }
 
   const commands = extractCommands(syncResp);
+  if (commands.length > 0) {
+    log.debug(`[status-report] sync returned ${commands.length} command(s) for ${agentType} (${localAgentId})`);
+  }
   for (const cmd of commands) {
     // ③ execute + ack each command (terminal — no retry).
     let status: 'success' | 'failed' = 'success';
@@ -341,9 +344,11 @@ async function runStatusReportInner(opts: StatusReportOptions): Promise<void> {
       await executeSkillCommand(cmd, skillsDir);
       // Maintain clawpro bookkeeping so future reports tag the slug correctly.
       await recordClawproSlug(localAgentId, cmd.skill_slug, cmd.type !== 'uninstall_skill');
+      log.debug(`[status-report] ${cmd.type} ${cmd.skill_slug}@${cmd.skill_version ?? '?'} → ${skillsDir} OK`);
     } catch (e) {
       status = 'failed';
       error = (e as Error).message;
+      log.error(`[status-report] ${cmd.type} ${cmd.skill_slug}@${cmd.skill_version ?? '?'} FAILED: ${error}`);
     }
     if (cmd.id != null) {
       const ackBody = { id: cmd.id, status, error };
