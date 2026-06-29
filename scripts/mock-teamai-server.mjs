@@ -29,7 +29,7 @@ const SEED_INSTALL = process.env.SEED_INSTALL ?? '';
 let pendingCommands = SEED_INSTALL
   ? [
       {
-        id: 'rec-1',
+        id: 1,
         type: 'install_skill',
         skill_slug: SEED_INSTALL,
         skill_version: '1.0.0',
@@ -89,14 +89,14 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === 'POST' && url.pathname === '/api/v1/local-agent/report') {
+  if (req.method === 'POST' && url.pathname === '/api/local-agent/report') {
     const body = await readBody(req);
     console.log('[report]', JSON.stringify(body));
     json(200, { ok: true, instance_id: 'local-mock-abc123' });
     return;
   }
 
-  if (req.method === 'POST' && url.pathname === '/api/v1/local-agent/sync') {
+  if (req.method === 'POST' && url.pathname === '/api/local-agent/sync') {
     const body = await readBody(req);
     console.log('[sync]', JSON.stringify(body));
     const commands = pendingCommands;
@@ -105,10 +105,10 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  const ack = url.pathname.match(/^\/api\/v1\/local-agent\/commands\/([^/]+)\/ack$/);
-  if (req.method === 'POST' && ack) {
+  // ack: the command id now travels in the request body (id: int).
+  if (req.method === 'POST' && url.pathname === '/api/local-agent/commands/ack') {
     const body = await readBody(req);
-    console.log(`[ack ${ack[1]}]`, JSON.stringify(body));
+    console.log(`[ack ${body.id}]`, JSON.stringify(body));
     json(200, { ok: true });
     return;
   }

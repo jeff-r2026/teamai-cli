@@ -69,22 +69,23 @@ afterEach(async () => {
 // ─── pure helpers ───────────────────────────────────────
 
 describe('resolveEndpoints', () => {
-  it('defaults to the iWiki contract paths', () => {
+  it('defaults to the clawpro contract paths (no v1)', () => {
     const ep = resolveEndpoints();
-    expect(ep.report).toBe('/api/v1/local-agent/report');
-    expect(ep.sync).toBe('/api/v1/local-agent/sync');
-    expect(ep.ack('xyz')).toBe('/api/v1/local-agent/commands/xyz/ack');
+    expect(ep.report).toBe('/api/local-agent/report');
+    expect(ep.sync).toBe('/api/local-agent/sync');
+    expect(ep.ack).toBe('/api/local-agent/commands/ack');
   });
 
   it('honors a TEAMAI_REPORT_PATHS override (interface names not hard-coded)', () => {
     process.env.TEAMAI_REPORT_PATHS = JSON.stringify({
       report: '/r',
       sync: '/s',
-      ack: '/c/:id/done',
+      ack: '/c/done',
     });
     const ep = resolveEndpoints();
     expect(ep.report).toBe('/r');
-    expect(ep.ack('42')).toBe('/c/42/done');
+    expect(ep.sync).toBe('/s');
+    expect(ep.ack).toBe('/c/done');
   });
 });
 
@@ -147,7 +148,7 @@ describe('runStatusReport (session phase)', () => {
     // Seed the install command now that the server URL (and download endpoint) is known.
     server.seedCommands([
       {
-        id: 'rec-1',
+        id: 1,
         type: 'install_skill',
         skill_slug: 'weather',
         skill_version: '1.0.0',
@@ -161,7 +162,8 @@ describe('runStatusReport (session phase)', () => {
     expect(fs.existsSync(path.join(tmpDir, '.codebuddy', 'skills', 'weather', 'SKILL.md'))).toBe(true);
     // Ack recorded as success.
     expect(server.acks).toHaveLength(1);
-    expect(server.acks[0]).toMatchObject({ id: 'rec-1' });
+    expect(server.acks[0]).toMatchObject({ id: 1 });
+    expect((server.acks[0].body as { id: number }).id).toBe(1);
     expect((server.acks[0].body as { status: string }).status).toBe('success');
 
     // clawpro bookkeeping recorded → weather is now tagged clawpro.

@@ -72,7 +72,7 @@ describe('executeSkillCommand', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(zip as unknown as BodyInit, { status: 200 })));
 
     const cmd: SkillCommand = {
-      id: 'r1',
+      id: 1,
       type: 'install_skill',
       skill_slug: 'weather',
       skill_version: '1.0.0',

@@ -28,7 +28,7 @@ export interface MockServerHandle {
   close: () => Promise<void>;
   reports: unknown[];
   syncs: unknown[];
-  acks: Array<{ id: string; body: unknown }>;
+  acks: Array<{ id: number; body: unknown }>;
   /** Queue commands the next sync should return (download_url can use `url`). */
   seedCommands: (cmds: SkillCommand[]) => void;
   /** Set the /repo response after start (download_url can use `url`). */
@@ -97,13 +97,13 @@ export async function startMockServer(config: MockServerConfig): Promise<MockSer
       return;
     }
 
-    if (req.method === 'POST' && url.pathname === '/api/v1/local-agent/report') {
+    if (req.method === 'POST' && url.pathname === '/api/local-agent/report') {
       handle.reports.push(await readBody(req));
       json(200, { ok: true, instance_id: 'local-mock-abc123' });
       return;
     }
 
-    if (req.method === 'POST' && url.pathname === '/api/v1/local-agent/sync') {
+    if (req.method === 'POST' && url.pathname === '/api/local-agent/sync') {
       handle.syncs.push(await readBody(req));
       const commands = config.pendingCommands ?? [];
       config.pendingCommands = []; // deliver once
@@ -111,9 +111,10 @@ export async function startMockServer(config: MockServerConfig): Promise<MockSer
       return;
     }
 
-    const ackMatch = url.pathname.match(/^\/api\/v1\/local-agent\/commands\/([^/]+)\/ack$/);
-    if (req.method === 'POST' && ackMatch) {
-      handle.acks.push({ id: ackMatch[1], body: await readBody(req) });
+    // ack: the command id now travels in the request body (id: int).
+    if (req.method === 'POST' && url.pathname === '/api/local-agent/commands/ack') {
+      const body = (await readBody(req)) as { id?: number };
+      handle.acks.push({ id: body.id as number, body });
       json(200, { ok: true });
       return;
     }

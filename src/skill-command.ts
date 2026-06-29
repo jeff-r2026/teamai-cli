@@ -23,8 +23,8 @@ export type SkillCommandType = 'install_skill' | 'uninstall_skill' | 'update_ski
 
 /** A single skill-distribution command (server `skill_distribution_record`). */
 export interface SkillCommand {
-  /** Command id (echoed back in ack). Optional for the pull path. */
-  id?: string;
+  /** Command id (int, echoed back in the ack request body). Optional for the pull path. */
+  id?: number;
   type: SkillCommandType;
   skill_slug: string;
   /** Target version (required for install/update; optional for uninstall). */

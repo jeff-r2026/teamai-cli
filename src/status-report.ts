@@ -39,20 +39,20 @@ import { log } from './utils/logger.js';
 export interface EndpointMap {
   report: string;
   sync: string;
-  /** ack path builder — receives the command id. */
-  ack: (commandId: string) => string;
+  /** ack endpoint — the command id travels in the request body (id: int). */
+  ack: string;
 }
 
-/** Default contract paths (iWiki §5.A). */
+/** Default contract paths (clawpro backend, post v1-removal). */
 const DEFAULT_ENDPOINTS: EndpointMap = {
-  report: '/api/v1/local-agent/report',
-  sync: '/api/v1/local-agent/sync',
-  ack: (id) => `/api/v1/local-agent/commands/${id}/ack`,
+  report: '/api/local-agent/report',
+  sync: '/api/local-agent/sync',
+  ack: '/api/local-agent/commands/ack',
 };
 
 /**
  * Resolve the endpoint map. Optional env override TEAMAI_REPORT_PATHS is a JSON
- * object `{ report, sync, ack }` where ack contains the literal `:id` token.
+ * object `{ report, sync, ack }` with plain path strings.
  */
 export function resolveEndpoints(): EndpointMap {
   const raw = process.env.TEAMAI_REPORT_PATHS;
@@ -62,9 +62,7 @@ export function resolveEndpoints(): EndpointMap {
     return {
       report: parsed.report ?? DEFAULT_ENDPOINTS.report,
       sync: parsed.sync ?? DEFAULT_ENDPOINTS.sync,
-      ack: parsed.ack
-        ? (id) => parsed.ack!.replace(':id', encodeURIComponent(id))
-        : DEFAULT_ENDPOINTS.ack,
+      ack: parsed.ack ?? DEFAULT_ENDPOINTS.ack,
     };
   } catch {
     return DEFAULT_ENDPOINTS;
@@ -347,9 +345,9 @@ async function runStatusReportInner(opts: StatusReportOptions): Promise<void> {
       status = 'failed';
       error = (e as Error).message;
     }
-    if (cmd.id) {
-      const ackBody = { status, error };
-      await sendOrQueue(`${endpoint}${endpoints.ack(cmd.id)}`, apiKey, ackBody);
+    if (cmd.id != null) {
+      const ackBody = { id: cmd.id, status, error };
+      await sendOrQueue(`${endpoint}${endpoints.ack}`, apiKey, ackBody);
     }
   }
 }
