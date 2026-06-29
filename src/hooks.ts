@@ -9,9 +9,14 @@ import { resolveTeamHooks } from './resources/hooks.js';
 
 /**
  * Lobster-family agents (OpenClaw engine) that use HOOK.md + handler.ts instead
- * of settings.json. WorkBuddy is the phase-1 target (issue #1, 方案二 §四).
+ * of settings.json (issue #1, 方案二 §四).
+ *
+ * WorkBuddy is intentionally NOT here: it reads Claude-format hooks from
+ * ~/.workbuddy/settings.json (verified on 5.2.0), so it routes through the
+ * settings-based injection path like codebuddy. The remaining claw variants
+ * stay on the OpenClaw HOOK.md path pending real-device confirmation.
  */
-const OPENCLAW_TOOLS = new Set(['workbuddy', 'openclaw', 'qclaw', 'easyclaw', 'autoclaw']);
+const OPENCLAW_TOOLS = new Set(['openclaw', 'qclaw', 'easyclaw', 'autoclaw']);
 
 /** Subcommands expected in each tool settings file (for `teamai doctor`). */
 export const TEAMAI_HOOK_SUBCOMMANDS = ['hook-dispatch'] as const;

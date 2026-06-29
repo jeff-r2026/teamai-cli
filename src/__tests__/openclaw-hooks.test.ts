@@ -17,7 +17,7 @@ afterEach(() => {
 describe('injectOpenClawHooks', () => {
   it('writes HOOK.md + handler.ts under <hooksDir>/teamai-status-report', async () => {
     const hooksDir = path.join(tmpDir, 'hooks');
-    await injectOpenClawHooks(hooksDir, 'workbuddy');
+    await injectOpenClawHooks(hooksDir, 'openclaw');
 
     const dir = path.join(hooksDir, OPENCLAW_HOOK_DIR);
     const hookMd = fs.readFileSync(path.join(dir, 'HOOK.md'), 'utf-8');
@@ -27,7 +27,7 @@ describe('injectOpenClawHooks', () => {
     expect(hookMd).toContain('session:start');
     expect(hookMd).toContain('command:new');
     expect(handler).toContain('hook-dispatch');
-    expect(handler).toContain('workbuddy');
+    expect(handler).toContain('openclaw');
     // Maps OpenClaw events to teamai dispatch events.
     expect(handler).toContain('session-start');
     expect(handler).toContain('prompt-submit');
@@ -35,8 +35,8 @@ describe('injectOpenClawHooks', () => {
 
   it('is idempotent (re-inject overwrites cleanly)', async () => {
     const hooksDir = path.join(tmpDir, 'hooks');
-    await injectOpenClawHooks(hooksDir, 'workbuddy');
-    await injectOpenClawHooks(hooksDir, 'workbuddy');
+    await injectOpenClawHooks(hooksDir, 'openclaw');
+    await injectOpenClawHooks(hooksDir, 'openclaw');
     const dir = path.join(hooksDir, OPENCLAW_HOOK_DIR);
     expect(fs.existsSync(path.join(dir, 'HOOK.md'))).toBe(true);
   });
@@ -45,7 +45,7 @@ describe('injectOpenClawHooks', () => {
 describe('removeOpenClawHooks', () => {
   it('removes the injected hook dir and is a no-op when absent', async () => {
     const hooksDir = path.join(tmpDir, 'hooks');
-    await injectOpenClawHooks(hooksDir, 'workbuddy');
+    await injectOpenClawHooks(hooksDir, 'openclaw');
     await removeOpenClawHooks(hooksDir);
     expect(fs.existsSync(path.join(hooksDir, OPENCLAW_HOOK_DIR))).toBe(false);
     // second removal does not throw

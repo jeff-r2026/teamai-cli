@@ -1,17 +1,18 @@
 /**
  * OpenClaw / 龙虾-family hook injection (issue #1, 方案二 §四).
  *
- * WorkBuddy (category `lobster`) uses the OpenClaw hook engine — a different
- * shape from Claude's settings.json: a `HOOK.md` (frontmatter `events:`) plus a
- * `handler.ts` placed under `<hooksDir>/teamai-status-report/`. Both shell out to
- * the same `teamai hook-dispatch` entry point, so the reporting core is shared
- * with the Claude/CodeBuddy path; only the trigger adapter differs.
+ * NOTE: WorkBuddy was originally assumed to use this OpenClaw engine, but
+ * real-device verification (WorkBuddy 5.2.0) showed it embeds the CodeBuddy CLI
+ * engine and reads Claude-format hooks from ~/.workbuddy/settings.json instead.
+ * WorkBuddy is therefore wired via the settings-based path (see types.ts
+ * toolPaths.workbuddy.settings), NOT here. This adapter remains for the other
+ * claw variants (openclaw / qclaw / easyclaw / autoclaw) whose engine is still
+ * unconfirmed; it writes a `HOOK.md` (frontmatter `events:`) plus a `handler.ts`
+ * under `<hooksDir>/teamai-status-report/`, both shelling out to the same
+ * `teamai hook-dispatch` entry point.
  *
  * Events: `session:start` → session-start dispatch (report + sync);
  *         `command:new`   → prompt-submit dispatch (sync only).
- *
- * NOTE: WorkBuddy's desktop hook config dir (`~/.openclaw/` vs `~/.workbuddy/`)
- * is still pending confirmation (issue §七.1); callers pass the resolved dir.
  */
 
 import path from 'node:path';
@@ -75,7 +76,7 @@ export default async function handler(ctx: { event?: string } = {}): Promise<voi
  * Inject (or refresh) the teamai OpenClaw hook into `<hooksDir>`.
  * Idempotent — rewrites the two files each time.
  */
-export async function injectOpenClawHooks(hooksDir: string, tool = 'workbuddy'): Promise<void> {
+export async function injectOpenClawHooks(hooksDir: string, tool = 'openclaw'): Promise<void> {
   const dir = path.join(hooksDir, OPENCLAW_HOOK_DIR);
   await ensureDir(dir);
   await writeFile(path.join(dir, 'HOOK.md'), buildHookMd(tool));
