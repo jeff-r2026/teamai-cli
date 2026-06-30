@@ -85,6 +85,43 @@ teamai init --http https://your-team-host/api --token <api-key>
 
 > **隐私**：install path 和 machine id 仅在*本地*哈希以派生稳定的 `local_agent_id`，二者都不会上报。
 
+<details>
+<summary><b>HTTP 契约</b>（面向后端实现者）—— <code>--http</code> 端点需要提供哪些接口</summary>
+
+`--http <baseUrl>` 传入的是基础地址，所有端点都相对于它，并统一用 `Authorization: Bearer <api-key>` 鉴权。
+
+| 端点 | 方法 | 用途 | 路径 |
+|------|------|------|------|
+| `{baseUrl}/repo` | GET | 团队仓库快照（skills + rules/docs） | **固定** |
+| `{baseUrl}/api/local-agent/report` | POST | session 启动：upsert agent + 已装 skill | 默认，可配置 |
+| `{baseUrl}/api/local-agent/sync` | POST | 上报状态 + 返回待执行的 skill 命令 | 默认，可配置 |
+| `{baseUrl}/api/local-agent/commands/ack` | POST | 回执单条命令（`{ id, status, error }`） | 默认，可配置 |
+
+`GET /repo` 返回 JSON（返回 404 或非 JSON 的 200 ⇒ 客户端进入 reporting-only 模式）：
+
+```json
+{
+  "version": "<不透明的缓存 key，例如 commit hash>",
+  "files":   [{ "path": "rules/foo.md", "content": "..." }],
+  "commands":[{ "type": "install_skill", "skill_slug": "x", "skill_version": "1.0.0", "download_url": "https://signed-url/..." }]
+}
+```
+
+- `files[]` 原样写入本地仓库树（带路径穿越防护）；`commands[]` 负责 skill 的安装/更新/卸载。
+- skill 的 `download_url` 是**直连**拉取——它在 query string 里自带签名鉴权，因此不附带 `Bearer` 头。它必须指向一个 `.zip`，其根目录为 `<slug>/SKILL.md …` 或扁平的 `SKILL.md …`。
+
+**固定 vs 可配置**：`/repo` 路径固定；reporter 三个路径是可覆盖的默认值；上面的 JSON 结构是契约。可调项（环境变量）：
+
+| 变量 | 作用 |
+|------|------|
+| `TEAMAI_API_TOKEN` | API key（`--token` 的替代） |
+| `TEAMAI_REPORT_ENDPOINT` | reporter 基础 URL（默认 = `--http` 地址） |
+| `TEAMAI_REPORT_PATHS` | JSON `{ "report", "sync", "ack" }`，覆盖 reporter 三个路径 |
+| `TEAMAI_REPORT_AGENTS` | 参与上报的 agent，逗号分隔（默认 `workbuddy,codebuddy`） |
+| `TEAMAI_SKILL_DOWNLOAD_HOSTS` | skill `download_url` 的 host 白名单，逗号分隔（空 = 全部放行） |
+
+</details>
+
 ## 命令
 
 | 命令 | 说明 |
