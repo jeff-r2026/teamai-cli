@@ -22,6 +22,7 @@
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:e2e:live": "TEAMAI_E2E_LIVE_TOOLS=1 vitest run --config vitest.e2e.config.ts src/__tests__/e2e/tool-integration-e2e.test.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
