@@ -2,10 +2,9 @@
  * Agent status reporter (issue #1, 方案二) — hooks-driven online reporting.
  *
  * Three interfaces (iWiki §5.A): report / sync / ack.
- *   - report (SessionStart only): upsert local info + installed skill list,
- *     each tagged source = clawpro (server-managed) | local (user-installed).
+ *   - report (SessionStart only): upsert local info + installed skill list.
  *   - sync   (SessionStart + UserPromptSubmit): report status + pull commands.
- *     commands drive install/update (pull) + uninstall (delete) of clawpro skills.
+ *     commands drive install/update (pull) + uninstall (delete) of skills.
  *   - ack    (per command): success | failed (terminal, no retry).
  *
  * Endpoint paths are NOT hard-coded — they live in an internal mapping that
@@ -26,8 +25,6 @@ import {
   listDirs,
   pathExists,
   readFileSafe,
-  readJson,
-  writeJson,
   ensureDir,
 } from './utils/fs.js';
 import { resolveBaseDir, type LocalConfig, type TeamaiConfig } from './types.js';
@@ -95,43 +92,12 @@ export function resolveReportEndpoint(localConfig: LocalConfig): string | null {
   return fromEnv ? fromEnv.replace(/\/$/, '') : null;
 }
 
-// ─── clawpro skill bookkeeping ──────────────────────────────
-//
-// We record which slugs were installed via `sync` commands so that `report`
-// can tag them `source: clawpro` (vs user-installed `local`). Keyed by
-// local_agent_id so user/project scope (different ids) stay independent.
-
-function clawproRecordPath(): string {
-  return path.join(process.env.HOME ?? '', '.teamai', 'reporter', 'clawpro-skills.json');
-}
-
-type ClawproRecord = Record<string, string[]>;
-
-async function loadClawproRecord(): Promise<ClawproRecord> {
-  return (await readJson<ClawproRecord>(clawproRecordPath())) ?? {};
-}
-
-export async function getClawproSlugs(localAgentId: string): Promise<Set<string>> {
-  const rec = await loadClawproRecord();
-  return new Set(rec[localAgentId] ?? []);
-}
-
-async function recordClawproSlug(localAgentId: string, slug: string, present: boolean): Promise<void> {
-  const rec = await loadClawproRecord();
-  const set = new Set(rec[localAgentId] ?? []);
-  if (present) set.add(slug);
-  else set.delete(slug);
-  rec[localAgentId] = [...set];
-  await writeJson(clawproRecordPath(), rec);
-}
-
 // ─── Skill scanning ─────────────────────────────────────────
 
 export interface ReportedSkill {
   slug: string;
   version: string;
   display_name: string;
-  source: 'clawpro' | 'local';
 }
 
 const FRONTMATTER_REGEX = /^---\n([\s\S]*?)\n---/;
@@ -152,12 +118,9 @@ async function readSkillMeta(skillMdPath: string): Promise<{ name: string; versi
 }
 
 /**
- * Scan an agent's skills directory, tagging each skill clawpro/local.
+ * Scan an agent's skills directory and return every installed skill.
  */
-export async function scanReportableSkills(
-  skillsDir: string,
-  clawproSlugs: Set<string>,
-): Promise<ReportedSkill[]> {
+export async function scanReportableSkills(skillsDir: string): Promise<ReportedSkill[]> {
   if (!(await pathExists(skillsDir))) return [];
   const dirs = await listDirs(skillsDir);
   const skills: ReportedSkill[] = [];
@@ -170,7 +133,6 @@ export async function scanReportableSkills(
       slug,
       version: meta.version,
       display_name: meta.name || slug,
-      source: clawproSlugs.has(slug) ? 'clawpro' : 'local',
     });
   }
   skills.sort((a, b) => a.slug.localeCompare(b.slug));
@@ -309,8 +271,7 @@ async function runStatusReportInner(opts: StatusReportOptions): Promise<void> {
 
   // ① report — SessionStart only.
   if (opts.phase === 'session') {
-    const clawpro = await getClawproSlugs(localAgentId);
-    const skills = await scanReportableSkills(skillsDir, clawpro);
+    const skills = await scanReportableSkills(skillsDir);
     const reportBody = {
       local_agent_id: localAgentId,
       agent_type: agentType,
@@ -350,8 +311,6 @@ async function runStatusReportInner(opts: StatusReportOptions): Promise<void> {
     let error = '';
     try {
       await executeSkillCommand(cmd, skillsDir);
-      // Maintain clawpro bookkeeping so future reports tag the slug correctly.
-      await recordClawproSlug(localAgentId, cmd.skill_slug, cmd.type !== 'uninstall_skill');
       log.debug(`[status-report] ${label} → ${skillsDir} OK`);
     } catch (e) {
       status = 'failed';

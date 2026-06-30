@@ -8,7 +8,6 @@ import {
   resolveEndpoints,
   getReportableAgents,
   scanReportableSkills,
-  getClawproSlugs,
   runStatusReport,
 } from '../status-report.js';
 import { startMockServer, type MockServerHandle } from './helpers/mock-server.js';
@@ -112,12 +111,13 @@ describe('resolveReportEndpoint', () => {
 });
 
 describe('scanReportableSkills', () => {
-  it('tags clawpro vs local', async () => {
+  it('lists installed skills from the agent skills dir', async () => {
     setupHome();
     const skillsDir = path.join(tmpDir, '.codebuddy', 'skills');
-    const skills = await scanReportableSkills(skillsDir, new Set(['someother']));
+    const skills = await scanReportableSkills(skillsDir);
     expect(skills).toHaveLength(1);
-    expect(skills[0]).toMatchObject({ slug: 'mylocal', version: '2.0.0', source: 'local' });
+    expect(skills[0]).toMatchObject({ slug: 'mylocal', version: '2.0.0', display_name: 'mylocal' });
+    expect(skills[0]).not.toHaveProperty('source');
   });
 });
 
@@ -132,16 +132,17 @@ describe('runStatusReport (session phase)', () => {
     await runStatusReport({ stdin: {}, tool: 'codebuddy', phase: 'session' });
 
     expect(server.reports).toHaveLength(1);
-    const report = server.reports[0] as { agent_type: string; skills: Array<{ slug: string; source: string }> };
+    const report = server.reports[0] as { agent_type: string; skills: Array<{ slug: string }> };
     expect(report.agent_type).toBe('codebuddy');
-    expect(report.skills.find((s) => s.slug === 'mylocal')?.source).toBe('local');
+    expect(report.skills.find((s) => s.slug === 'mylocal')).toBeTruthy();
+    expect(JSON.stringify(report)).not.toContain('"source"');
     // No install_path / machine_id leaked in the payload (privacy boundary).
     expect(JSON.stringify(report)).not.toContain('install_path');
     expect(JSON.stringify(report)).not.toContain('machine_id');
     expect(server.syncs).toHaveLength(1);
   });
 
-  it('executes an install command from sync and acks success; next report tags clawpro', async () => {
+  it('executes an install command from sync and acks success', async () => {
     setupHome();
     server = await startMockServer({ apiKey: API_KEY });
     process.env.TEAMAI_REPORT_ENDPOINT = server.url;
@@ -165,12 +166,6 @@ describe('runStatusReport (session phase)', () => {
     expect(server.acks[0]).toMatchObject({ id: 1 });
     expect((server.acks[0].body as { id: number }).id).toBe(1);
     expect((server.acks[0].body as { status: string }).status).toBe('success');
-
-    // clawpro bookkeeping recorded → weather is now tagged clawpro.
-    const { deriveLocalAgentId, getMachineId } = await import('../machine-id.js');
-    const localAgentId = deriveLocalAgentId('codebuddy', getMachineId(), path.join(tmpDir, '.codebuddy'));
-    const slugs = await getClawproSlugs(localAgentId);
-    expect(slugs.has('weather')).toBe(true);
   });
 });
 
