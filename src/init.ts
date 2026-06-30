@@ -220,8 +220,9 @@ export async function initHttp(
     // state may not exist yet
   }
 
-  // Step 5: inject hooks (unchanged)
-  await injectHooksToAllTools(teamConfig.toolPaths, resolveBaseDir(localConfig));
+  // Step 5: inject hooks (built-in dispatch incl. the reporter) via the same
+  // authoritative path the git init uses, so HTTP consumers behave identically.
+  await reconcileTeamHooksForConfig(teamConfig, localConfig);
 
   if (reportingOnly) {
     log.success('teamai initialized (HTTP, reporting-only — /repo not live yet)!');
