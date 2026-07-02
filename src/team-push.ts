@@ -99,6 +99,7 @@ export function mergeStats(
 export async function reportUsageToTeam(
   repoPath: string,
   username: string,
+  options?: { skipTruncate?: boolean },
 ): Promise<void> {
   try {
     const events = await readUsageEvents();
@@ -163,10 +164,12 @@ export async function reportUsageToTeam(
 
     await Promise.race([pushPromise, timeoutPromise]);
 
-    // Success — truncate reported events (only if we had any)
-    if (events.length > 0) {
+    // Success — truncate reported events (only if we had any and caller allows it)
+    if (events.length > 0 && !options?.skipTruncate) {
       await truncateUsageAfterReport(events.length);
       log.debug(`Reported ${events.length} usage events to team repo`);
+    } else if (events.length > 0) {
+      log.debug(`Reported ${events.length} usage events to team repo (kept local copy)`);
     } else {
       log.debug('Pushed pending votes to team repo');
     }

@@ -742,18 +742,12 @@ async function pullForScope(
     }
   }
 
-  // Step 5: Auto-report usage data (user scope only)
-  if (!options.dryRun && localConfig.scope === 'user') {
-    try {
-      const { reportUsageToTeam } = await import('./team-push.js');
-      await reportUsageToTeam(localConfig.repo.localPath, localConfig.username);
-    } catch (e) {
-      log.error(`Auto-report skipped: ${(e as Error).message}`);
-    }
-  }
+  // Step 5: Auto-report usage data — handled centrally in pull() to avoid
+  // double-truncation when both user and project scopes share events.
+  // (no-op here; see pull() for the unified reporting logic)
 
-  // Step 6: Show skill recommendations (user scope only)
-  if (!options.silent && !options.dryRun && localConfig.scope === 'user') {
+  // Step 6: Show skill recommendations
+  if (!options.silent && !options.dryRun) {
     try {
       const YAML = (await import('yaml')).default;
       const { listFiles, readFileSafe } = await import('./utils/fs.js');
@@ -1035,7 +1029,35 @@ export async function pull(options: GlobalOptions): Promise<void> {
     log.warn(`Project-scope pull error: ${(e as Error).message}`);
   }
 
-  // 3. Pull cross-team source skills (runs outside pullForScope to bypass fast-path)
+  // 3. Auto-report usage data to all active scopes. Events live in a single
+  //    shared file (~/.teamai/usage.jsonl), so we report to each repo with
+  //    skipTruncate=true first, then truncate once at the end.
+  if (!options.dryRun) {
+    try {
+      const { reportUsageToTeam } = await import('./team-push.js');
+      const { truncateUsageAfterReport, readUsageEvents } = await import('./usage-tracker.js');
+      const projectConfig = await detectProjectConfig();
+      const targets: Array<{ repoPath: string; username: string }> = [];
+      if (projectConfig) targets.push({ repoPath: projectConfig.repo.localPath, username: projectConfig.username });
+      if (userConfig) targets.push({ repoPath: userConfig.repo.localPath, username: userConfig.username });
+
+      const eventCount = (await readUsageEvents()).length;
+      for (const t of targets) {
+        try {
+          await reportUsageToTeam(t.repoPath, t.username, { skipTruncate: true });
+        } catch (e) {
+          log.error(`Auto-report to ${t.repoPath} skipped: ${(e as Error).message}`);
+        }
+      }
+      if (eventCount > 0 && targets.length > 0) {
+        await truncateUsageAfterReport(eventCount);
+      }
+    } catch (e) {
+      log.debug(`Auto-report skipped: ${(e as Error).message}`);
+    }
+  }
+
+  // 4. Pull cross-team source skills (runs outside pullForScope to bypass fast-path)
   if (userConfig) {
     try {
       const { pullSources } = await import('./source.js');
