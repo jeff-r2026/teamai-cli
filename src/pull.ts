@@ -23,6 +23,7 @@ import {
   resolveBaseDir,
   isWikiEnabled,
   getTeamaiHome,
+  isRecallEnabled,
 } from './types.js';
 import type { CultureFrontmatter } from './types.js';
 import { loadRolesManifest, resolveRoleResourceNamespaces, type ResourceNamespaces } from './roles.js';
@@ -317,8 +318,9 @@ async function pullForScope(
         if (!options.dryRun) {
           const cfg = await loadTeamConfig(localConfig.repo.localPath);
           if (cfg) {
-            try { const { deployBuiltinAgents } = await import('./builtin-agents.js'); await deployBuiltinAgents(cfg, localConfig); } catch {}
-            try { const { deployBuiltinRules } = await import('./builtin-rules.js'); await deployBuiltinRules(cfg, localConfig); } catch {}
+            const skipRecall = !isRecallEnabled(localConfig, cfg);
+            try { const { deployBuiltinAgents } = await import('./builtin-agents.js'); await deployBuiltinAgents(cfg, localConfig, { skipRecall }); } catch {}
+            try { const { deployBuiltinRules } = await import('./builtin-rules.js'); await deployBuiltinRules(cfg, localConfig, { skipRecall }); } catch {}
             try { const { deployBuiltinSkills } = await import('./builtin-skills.js'); await deployBuiltinSkills(cfg, localConfig, { skipWiki: !isWikiEnabled(), reportingOnly }); } catch {}
           }
         }
@@ -733,7 +735,7 @@ async function pullForScope(
   // configured. Tools without subagent support (cursor / codex / openclaw /
   // workbuddy) are skipped — for them the recall flow runs purely via hooks
   // (auto-recall, TodoWrite hint) and the manual `teamai recall` command.
-  if (!options.dryRun) {
+  if (!options.dryRun && isRecallEnabled(localConfig, freshConfig)) {
     try {
       const baseDir = resolveBaseDir(localConfig);
       const recallBlock = compileRecallRulesBlock();
@@ -781,7 +783,8 @@ async function pullForScope(
   if (!options.dryRun) {
     try {
       const { deployBuiltinRules } = await import('./builtin-rules.js');
-      const deployed = await deployBuiltinRules(freshConfig, localConfig);
+      const skipRecall = !isRecallEnabled(localConfig, freshConfig);
+      const deployed = await deployBuiltinRules(freshConfig, localConfig, { skipRecall });
       if (deployed > 0) {
         log.debug(`[${scopeLabel}] Deployed built-in rules to ${deployed} tool(s)`);
       }
@@ -794,7 +797,8 @@ async function pullForScope(
   if (!options.dryRun) {
     try {
       const { deployBuiltinAgents } = await import('./builtin-agents.js');
-      const deployed = await deployBuiltinAgents(freshConfig, localConfig);
+      const skipRecall = !isRecallEnabled(localConfig, freshConfig);
+      const deployed = await deployBuiltinAgents(freshConfig, localConfig, { skipRecall });
       if (deployed > 0) {
         log.debug(`[${scopeLabel}] Deployed built-in agents to ${deployed} location(s)`);
       }
