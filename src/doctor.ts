@@ -2,10 +2,11 @@ import path from 'node:path';
 import { detectProjectConfig, loadLocalConfig, loadTeamConfig } from './config.js';
 import { pathExists, readFileSafe } from './utils/fs.js';
 import { log } from './utils/logger.js';
-import type { GlobalOptions } from './types.js';
+import type { GlobalOptions, Scope } from './types.js';
 import {
   TeamaiConfigSchema,
   TEAMAI_ENV_START,
+  resolveBaseDir,
   type TeamaiConfig,
 } from './types.js';
 import { TEAMAI_HOOK_SUBCOMMANDS } from './hooks.js';
@@ -16,19 +17,24 @@ interface Check {
   fix?: string;
 }
 
-function buildHookChecks(toolPaths: TeamaiConfig['toolPaths']): Check[] {
+/**
+ * Build hook checks only for tools whose settings parent directory already
+ * exists (i.e. the tool is installed). Tools that are not installed are skipped.
+ */
+async function buildHookChecks(toolPaths: TeamaiConfig['toolPaths'], baseDir: string): Promise<Check[]> {
   const checks: Check[] = [];
   for (const [tool, paths] of Object.entries(toolPaths)) {
     if (!paths.settings) continue;
+    const settingsPath = path.join(baseDir, paths.settings);
+    const parentDir = path.dirname(settingsPath);
+    if (!await pathExists(parentDir)) continue;
     checks.push({
       name: `teamai hooks in ${tool} settings`,
       check: async () => {
-        const settingsPath = path.join(process.env.HOME ?? '', paths.settings!);
         if (!await pathExists(settingsPath)) return false;
         const content = await readFileSafe(settingsPath);
         if (!content) return false;
 
-        // Check that every expected subcommand is present
         const missing = TEAMAI_HOOK_SUBCOMMANDS.filter(
           (sub) => !content.includes(`teamai ${sub}`),
         );
@@ -44,9 +50,12 @@ export async function doctor(options: GlobalOptions): Promise<void> {
   log.info('Running diagnostics...\n');
   const projectConfig = await detectProjectConfig();
   const localConfig = projectConfig ?? (await loadLocalConfig());
+  const scope: Scope = localConfig?.scope ?? 'user';
   const configPathLabel = projectConfig
     ? `${projectConfig.projectRoot}/.teamai/config.yaml`
     : '~/.teamai/config.yaml';
+
+  console.log(`  Scope: ${scope}${scope === 'project' && localConfig?.projectRoot ? ` (${localConfig.projectRoot})` : ''}\n`);
 
   // Try to load team config for dynamic tool paths and provider
   let teamConfig: TeamaiConfig | null = null;
@@ -56,10 +65,11 @@ export async function doctor(options: GlobalOptions): Promise<void> {
   // Fall back to schema defaults if team config is unavailable
   const toolPaths = teamConfig?.toolPaths ?? TeamaiConfigSchema.shape.toolPaths.parse(undefined);
   const providerName = teamConfig?.provider ?? 'tgit';
+  const baseDir = localConfig ? resolveBaseDir(localConfig) : (process.env.HOME ?? '');
 
   const checks: Check[] = [];
 
-  // Provider-specific checks: gf CLI only needed for TGit
+  // Provider-specific checks: gf CLI only needed for TGit, gh CLI for GitHub
   if (providerName === 'tgit') {
     // Dynamic import to avoid loading gf-cli code when not needed
     const { isGfInstalled, gfIsAuthenticated } = await import('./providers/tgit/index.js');
@@ -73,6 +83,21 @@ export async function doctor(options: GlobalOptions): Promise<void> {
         name: 'gf CLI is authenticated',
         check: async () => gfIsAuthenticated(),
         fix: 'Run `teamai init` to authenticate via gf auth login',
+      },
+    );
+  } else if (providerName === 'github') {
+    // Dynamic import to avoid loading gh-cli code when not needed
+    const { isGhInstalled, ghIsAuthenticated } = await import('./providers/github/index.js');
+    checks.push(
+      {
+        name: 'gh CLI is installed',
+        check: async () => isGhInstalled(),
+        fix: 'Install from https://cli.github.com/ or run `brew install gh`',
+      },
+      {
+        name: 'gh CLI is authenticated',
+        check: async () => ghIsAuthenticated(),
+        fix: 'Run `gh auth login` to authenticate',
       },
     );
   }
@@ -100,7 +125,7 @@ export async function doctor(options: GlobalOptions): Promise<void> {
       },
       fix: 'Check teamai.yaml in team repo for syntax errors',
     },
-    ...buildHookChecks(toolPaths),
+    ...await buildHookChecks(toolPaths, baseDir),
     {
       name: 'Env variables injected in shell profile',
       check: async () => {

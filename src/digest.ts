@@ -7,7 +7,8 @@ import { parseLearningDoc, titleFromFilename } from './utils/search-index.js';
 import { requireInit, detectProjectConfig } from './config.js';
 import { calculateTeamHealth } from './skill-health.js';
 import { createGit } from './utils/git.js';
-import type { GlobalOptions, UserStats } from './types.js';
+import type { GlobalOptions, UserStats, TokenUsage } from './types.js';
+import { totalTokens } from './types.js';
 
 interface SkillChange {
   name: string;
@@ -239,6 +240,105 @@ async function getRecentLearnings(repoPath: string): Promise<{ recent: LearningI
   return { recent, total };
 }
 
+/** Aggregated team-wide Human Intervention summary (Issue #34). */
+export interface InterventionSummary {
+  totalSessions: number;
+  totalInterventions: number;
+  interrupt: number;
+  toolReject: number;
+  correction: number;
+  /** Team-wide mean interventions per session. */
+  avgPerSession: number;
+  /** Per-user ranking by intervention rate (highest first = least autonomous). */
+  ranked: Array<{ username: string; sessions: number; total: number; rate: number }>;
+}
+
+/**
+ * Summarize the Human Intervention metric across all reported team stats.
+ * Returns null when no user has reported any interventions yet.
+ */
+export function summarizeInterventions(teamStats: UserStats[]): InterventionSummary | null {
+  const users = teamStats.filter((u) => u.interventions && u.interventions.sessions > 0);
+  if (users.length === 0) return null;
+
+  let totalSessions = 0;
+  let interrupt = 0;
+  let toolReject = 0;
+  let correction = 0;
+
+  const ranked = users.map((u) => {
+    const iv = u.interventions!;
+    const total = iv.interrupt + iv.toolReject + iv.correction;
+    totalSessions += iv.sessions;
+    interrupt += iv.interrupt;
+    toolReject += iv.toolReject;
+    correction += iv.correction;
+    return {
+      username: u.username,
+      sessions: iv.sessions,
+      total,
+      rate: iv.sessions > 0 ? total / iv.sessions : 0,
+    };
+  }).sort((a, b) => b.rate - a.rate);
+
+  const totalInterventions = interrupt + toolReject + correction;
+  return {
+    totalSessions,
+    totalInterventions,
+    interrupt,
+    toolReject,
+    correction,
+    avgPerSession: totalSessions > 0 ? totalInterventions / totalSessions : 0,
+    ranked,
+  };
+}
+
+/** Aggregated team-wide conversation-turn + token-usage summary (Issue #75). */
+export interface ConversationSummary {
+  /** Total human conversation turns (UserPromptSubmit) across the team. */
+  totalPrompts: number;
+  /** Team-wide cumulative token usage. */
+  tokens: TokenUsage;
+  /** Grand total of all token buckets. */
+  totalTokens: number;
+  /** Per-user ranking by token usage (highest first). */
+  ranked: Array<{ username: string; prompts: number; tokens: number }>;
+}
+
+/** Compact a token count into a human-friendly string (e.g. 12.3M, 4.5K). */
+export function formatTokenCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
+/**
+ * Summarize the conversation-turn count and token usage across all reported team
+ * stats. Returns null when no user has reported any prompts or tokens yet.
+ */
+export function summarizeConversation(teamStats: UserStats[]): ConversationSummary | null {
+  const users = teamStats.filter(
+    (u) => (u.prompts && u.prompts > 0) || (u.tokens && totalTokens(u.tokens) > 0),
+  );
+  if (users.length === 0) return null;
+
+  let totalPrompts = 0;
+  const tokens: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 };
+
+  const ranked = users.map((u) => {
+    const p = u.prompts ?? 0;
+    const t = u.tokens ?? { input: 0, output: 0, cacheRead: 0, cacheCreation: 0 };
+    totalPrompts += p;
+    tokens.input += t.input;
+    tokens.output += t.output;
+    tokens.cacheRead += t.cacheRead;
+    tokens.cacheCreation += t.cacheCreation;
+    return { username: u.username, prompts: p, tokens: totalTokens(t) };
+  }).sort((a, b) => b.tokens - a.tokens);
+
+  return { totalPrompts, tokens, totalTokens: totalTokens(tokens), ranked };
+}
+
 /**
  * Generate and display weekly team digest.
  */
@@ -301,14 +401,14 @@ export async function generateDigest(options: GlobalOptions): Promise<void> {
     // Learnings
     const { recent: recentLearnings, total: totalLearnings } = await getRecentLearnings(repoPath);
     if (recentLearnings.length > 0) {
-      console.log(`📚 本周新增 Learnings: ${recentLearnings.length} 篇`);
+      console.log(`📚 New Learnings This Week: ${recentLearnings.length}`);
       for (const learning of recentLearnings) {
         console.log(`  • ${learning.title}`);
       }
       console.log('');
     }
     if (totalLearnings > 0) {
-      console.log(`📊 知识库总量: ${totalLearnings} 篇 learnings`);
+      console.log(`📊 Knowledge base total: ${totalLearnings} learnings`);
       console.log('');
     }
 
@@ -330,6 +430,34 @@ export async function generateDigest(options: GlobalOptions): Promise<void> {
       for (const skill of updatedSkills) {
         console.log(`  • ${skill.name}`);
       }
+      console.log('');
+    }
+
+    // Session autonomy — Human Intervention metric (Issue #34)
+    const interventions = summarizeInterventions(teamStats);
+    if (interventions) {
+      console.log('🤖 Session Autonomy (Human Intervention):');
+      console.log(
+        `  Team avg: ${interventions.avgPerSession.toFixed(2)} interventions/session ` +
+        `(${interventions.totalSessions} sessions, ${interventions.totalInterventions} interventions)`,
+      );
+      console.log(
+        `  Breakdown: interrupt ${interventions.interrupt} · reject ${interventions.toolReject} · correction ${interventions.correction}`,
+      );
+      console.log('');
+    }
+
+    // Conversation turns + token usage (Issue #75)
+    const conversation = summarizeConversation(teamStats);
+    if (conversation) {
+      const t = conversation.tokens;
+      console.log('💬 Conversation & Token Usage:');
+      console.log(`  Total human prompts: ${conversation.totalPrompts}`);
+      console.log(
+        `  Total tokens: ${formatTokenCount(conversation.totalTokens)} ` +
+        `(input ${formatTokenCount(t.input)} · output ${formatTokenCount(t.output)} · ` +
+        `cache read ${formatTokenCount(t.cacheRead)} · cache write ${formatTokenCount(t.cacheCreation)})`,
+      );
       console.log('');
     }
 

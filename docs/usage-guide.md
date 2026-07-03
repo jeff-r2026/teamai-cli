@@ -387,6 +387,24 @@ teamai recall "GPU 内存不足"
 - 自动合并 user + project 双 scope 的知识库，结果标注 `[user]`/`[project]` 来源
 - 被查阅的知识自动 upvote，好文档浮到顶部
 
+### 开启 / 关闭 Recall
+
+Recall 功能通过两级配置控制——管理员设置团队默认值，成员可在本地覆盖：
+
+| 层级 | 配置文件 | 字段 | 说明 |
+|------|----------|------|------|
+| 团队默认 | `teamai.yaml` | `sharing.recall.enabled` | `true` / `false`（默认 `false`） |
+| 用户覆盖 | `~/.teamai/config.yaml` | `recallEnabled` | `true` / `false`，优先级高于团队默认 |
+| 环境变量 | shell | `TEAMAI_RECALL_DISABLED=1` | 强制禁用所有 recall hooks（应急开关） |
+
+```bash
+teamai recall enable     # 开启 recall，部署 subagent 和 rules
+teamai recall disable    # 关闭 recall，移除 subagent 和 rules
+teamai recall status     # 查看当前生效状态（团队默认 + 用户覆盖）
+```
+
+关闭后，`teamai pull` 将跳过部署 recall subagent、recall rules 注入块和 TodoWrite 提醒 hook。手动执行 `teamai recall <query>` 搜索不受此开关影响。
+
 ---
 
 ## 团队文化（Culture）
@@ -513,6 +531,33 @@ teamai dashboard --port 8080
 ```
 
 实时查看团队成员的 AI 编码会话状态。
+
+#### 人工干预指标（Human Intervention）
+
+每个会话卡片会显示一个 `⚠ N` 徽标，统计该对话中用户的**人工干预次数**——干预越少，说明 agent 一次把事做对的能力越强。鼠标悬停可看分类明细，三类信号各计一次：
+
+| 类型 | 含义 | 数据来源 |
+|------|------|----------|
+| `interrupt` | 用户在 agent 执行中途按 ESC 打断 | transcript 中被中断的 turn |
+| `toolReject` | 用户拒绝某个工具调用（permission deny） | transcript 中标记拒绝的 tool_result |
+| `correction` | agent stop 后 60s 内用户追加含「不对 / 重来 / 错了 / wrong / redo」等纠偏词的 prompt | stop → prompt_submit 事件模式 |
+
+> 隐私：只统计**次数**，不落地任何 prompt 或 transcript 原文。
+
+干预数据会随 `teamai pull` 自动聚合上报到团队 `stats/<user>.yaml`，并在 `teamai digest` 的「会话自主性」榜单中给出团队均值与人均干预率排行，可用于验证某个 skill / rule 上线后干预率是否下降。无 transcript 的工具（如 Cursor）会优雅降级，只统计 `correction`。
+
+#### 对话量与 Token 用量
+
+每个会话卡片还会显示两个徽标：
+
+| 徽标 | 含义 | 数据来源 |
+|------|------|----------|
+| `💬 N` | 该会话里**人类对话的轮数**（发了几次 prompt） | `UserPromptSubmit` 事件数 |
+| `⛁ X` | 该会话累计 **token 用量**（鼠标悬停看 输入 / 输出 / 缓存读 / 缓存写 明细） | Claude Code transcript 的 `message.usage`（按 `message.id` 去重，避免重复计数） |
+
+> 隐私：只统计**轮数与 token 数量**，不落地任何 prompt 或 transcript 原文。
+
+这两项同样随 `teamai pull` 聚合到 `stats/<user>.yaml`（`prompts` 与 `tokens` 字段），并在 `teamai digest` 的「对话量与 Token 用量」板块给出团队对话总轮数、token 总量（分桶）与人均 token 用量排行。拿不到 transcript 的工具（如 Cursor）会优雅降级：仍统计对话轮数，token 显示为 0 / N/A。
 
 ### Hooks
 
