@@ -295,8 +295,8 @@ describe('init', () => {
         cloneDone = true;
       });
 
-      // Answers: create repo confirm (Y), configure reviewers (n), primary role (1), no additional roles
-      questionAnswers = ['Y', 'n', '1', ''];
+      // Answers: create repo confirm (Y), configure reviewers (n), primary role (1)
+      questionAnswers = ['Y', 'n', '1'];
 
       await init({ repo: 'https://git.woa.com/HyperAI/new-repo.git', scope: 'user' });
 
@@ -358,7 +358,7 @@ describe('init', () => {
   });
 
   describe('role persistence', () => {
-    it('writes primaryRole, additionalRoles, and resourceProfileVersion when roles are selected', async () => {
+    it('writes primaryRole and resourceProfileVersion when role is selected', async () => {
       let cloneDone = false;
       pathExistsFn = (p: string) => {
         if (p === localPath) return cloneDone;
@@ -399,13 +399,13 @@ describe('init', () => {
           toolPaths: {},
         } as never);
 
-      questionAnswers = ['n', '1', '1'];
+      questionAnswers = ['n', '1'];
 
       await init({ repo: 'https://git.woa.com/HyperAI/teamai-test.git', scope: 'user' });
 
       expect(saveLocalConfig).toHaveBeenCalledWith(expect.objectContaining({
         primaryRole: 'hai',
-        additionalRoles: ['pm'],
+        additionalRoles: [],
         resourceProfileVersion: 1,
       }));
     });
@@ -423,8 +423,8 @@ describe('init', () => {
         cloneDone = true;
       });
 
-      // Answers: scope (user via default), configure reviewers (n), primary role (1), no additional
-      questionAnswers = ['user', 'n', '1', ''];
+      // Answers: scope (user via default), configure reviewers (n), primary role (1)
+      questionAnswers = ['user', 'n', '1'];
 
       const { log } = await import('../utils/logger.js');
 
@@ -447,8 +447,8 @@ describe('init', () => {
         cloneDone = true;
       });
 
-      // Answers: configure reviewers (n), primary role (1), no additional
-      questionAnswers = ['n', '1', ''];
+      // Answers: configure reviewers (n), primary role (1)
+      questionAnswers = ['n', '1'];
 
       const { log } = await import('../utils/logger.js');
       vi.mocked(log.info).mockClear();
