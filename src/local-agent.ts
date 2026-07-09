@@ -959,6 +959,7 @@ async function installDownloadedResource(input: {
   slug: string;
   scope: LocalAgentScope;
   workspacePath?: string;
+  tool?: string;
 }): Promise<string | undefined> {
   if (!input.command.download_url) {
     throw new Error(`Missing download_url for ${input.command.type ?? 'install_skill'}`);
@@ -972,7 +973,13 @@ async function installDownloadedResource(input: {
 
   const downloadedPath = await downloadResource(input.command.download_url);
   try {
-    const teamConfig = createLocalAgentTeamConfig(input.config.endpoint);
+    const fullTeamConfig = createLocalAgentTeamConfig(input.config.endpoint);
+    const tool = input.tool ?? 'workbuddy';
+    const toolPath = fullTeamConfig.toolPaths[tool];
+    if (!toolPath) {
+      throw new Error(`Unknown tool "${tool}": no toolPaths entry found`);
+    }
+    const teamConfig = { ...fullTeamConfig, toolPaths: { [tool]: toolPath } };
     const localConfig = createResourceLocalConfig(input.config, input.scope, repoPath, input.workspacePath);
     const now = new Date().toISOString();
     let displayName = input.command.display_name ?? input.slug;
@@ -1034,9 +1041,16 @@ async function uninstallResource(input: {
   slug: string;
   scope: LocalAgentScope;
   workspacePath?: string;
+  tool?: string;
 }): Promise<void> {
   const repoPath = getResourceRepoPath(input.scope, input.workspacePath);
-  const teamConfig = createLocalAgentTeamConfig(input.config.endpoint);
+  const fullTeamConfig = createLocalAgentTeamConfig(input.config.endpoint);
+  const tool = input.tool ?? 'workbuddy';
+  const toolPath = fullTeamConfig.toolPaths[tool];
+  if (!toolPath) {
+    throw new Error(`Unknown tool "${tool}": no toolPaths entry found`);
+  }
+  const teamConfig = { ...fullTeamConfig, toolPaths: { [tool]: toolPath } };
   const localConfig = createResourceLocalConfig(input.config, input.scope, repoPath, input.workspacePath);
   const manifest = await loadManifest();
   const scopeManifest = getManifestScope(manifest, input.scope, input.workspacePath);
@@ -1151,11 +1165,12 @@ async function executeCommand(
   }
 
   const slug = commandSlug(command, kind);
+  const tool = context.tool;
   if (action === 'install') {
-    return installDownloadedResource({ config, command, kind, slug, scope, workspacePath });
+    return installDownloadedResource({ config, command, kind, slug, scope, workspacePath, tool });
   }
 
-  await uninstallResource({ config, kind, slug, scope, workspacePath });
+  await uninstallResource({ config, kind, slug, scope, workspacePath, tool });
   return commandVersion(command, kind);
 }
 
