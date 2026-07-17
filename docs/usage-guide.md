@@ -400,7 +400,7 @@ Place documentation in the team repo's `docs/` directory; after pushing, team me
 
 ### Contributing knowledge
 
-The AI tracks your coding sessions via Hooks. When a session ends (the Stop hook), the system runs an intelligent score on the session (tool-call diversity, skill usage, error fixes, etc.), and if it qualifies, automatically reminds you:
+The AI tracks your coding sessions via Hooks. When a session ends (the Stop hook), the system scores it by **friction** — whether you interrupted or corrected the AI, denied a tool call, or the AI had to retry failing tools. A long-but-routine session (many tool calls, no friction) won't trigger; only a session where you actually hit a problem does. If it qualifies, the AI automatically reminds you:
 
 ```
 Recommend running /teamai-share-learnings to share your learnings
