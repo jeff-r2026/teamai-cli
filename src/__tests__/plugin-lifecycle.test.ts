@@ -503,13 +503,18 @@ describe('commandFingerprint', () => {
     expect(commandFingerprint(a)).toBe(commandFingerprint(b));
   });
 
-  it('changes when any command field changes', () => {
+  it('changes when a provisioning command field changes', () => {
     const base = makeDescriptor();
     const baseFp = commandFingerprint(base);
     expect(commandFingerprint(makeDescriptor({ installCmd: base.installCmd + ' --x' }))).not.toBe(baseFp);
     expect(commandFingerprint(makeDescriptor({ runCmd: base.runCmd + ' --topic-id NEW' }))).not.toBe(baseFp);
-    expect(commandFingerprint(makeDescriptor({ uninstallCmd: base.uninstallCmd + ' --purge' }))).not.toBe(baseFp);
     expect(commandFingerprint(makeDescriptor({ updateCmd: 'npm up -g cls' }))).not.toBe(baseFp);
+  });
+
+  it('is unaffected by uninstallCmd (only runs on removal, not provisioning)', () => {
+    const base = makeDescriptor();
+    const changed = makeDescriptor({ uninstallCmd: base.uninstallCmd + ' --purge' });
+    expect(commandFingerprint(changed)).toBe(commandFingerprint(base));
   });
 
   it('is unaffected by version (version is tracked separately)', () => {

@@ -29,10 +29,11 @@ export interface PluginState {
   /** Required: needed by uninstall when the plugin is removed from desired list. */
   uninstallCmd: string;
   /**
-   * SHA-256 of the resolved install/update/run/uninstall commands. Lets reconcile
-   * detect launch-argument changes (endpoint, topic_id, secrets, and so on) even
-   * when `version` is unchanged. A hash is stored rather than the raw commands so
-   * that secret material in `runCmd` never lands in the plugin-state file on disk.
+   * SHA-256 of the resolved install/update/run commands (uninstall excluded).
+   * Lets reconcile detect launch-argument changes (endpoint, topic_id, secrets,
+   * and so on) even when `version` is unchanged. A hash is stored rather than the
+   * raw commands so that secret material in `runCmd` never lands in the
+   * plugin-state file on disk.
    */
   cmdFingerprint?: string;
   /** ISO timestamp of last failed attempt; used for failure cooldown. */
@@ -79,14 +80,18 @@ const FAILURE_COOLDOWN_MS = 10 * 60 * 1000;
 // ---------------------------------------------------------------------------
 
 /**
- * Fingerprint the resolved command set. Any change to install/update/run/uninstall
- * (including launch args substituted into runCmd) yields a different hash, which
- * reconcile treats as a reason to re-run the plugin. Fields are joined with a NUL
+ * Fingerprint the commands that actually (re)provision the plugin: install,
+ * update, and run (including launch args substituted into runCmd). A change
+ * yields a different hash, which reconcile treats as a reason to re-run.
+ *
+ * `uninstallCmd` is deliberately excluded: it only runs when the plugin is
+ * removed from the desired list, so a change to it should not force an
+ * install/run cycle on a healthy plugin. Fields are joined with a NUL
  * separator so shifting content across a boundary cannot produce a collision.
  */
 export function commandFingerprint(d: PluginDescriptor): string {
   const sep = String.fromCharCode(0);
-  const parts = [d.installCmd, d.updateCmd ?? '', d.runCmd, d.uninstallCmd];
+  const parts = [d.installCmd, d.updateCmd ?? '', d.runCmd];
   return createHash('sha256').update(parts.join(sep)).digest('hex');
 }
 
@@ -141,8 +146,8 @@ export async function reconcilePlugins(
       } else {
         const currentFp = commandFingerprint(d);
         const versionChanged = d.version !== undefined && e.version !== d.version;
-        // A stored fingerprint that no longer matches means the resolved commands
-        // (install/update/run/uninstall, including launch args in runCmd) changed.
+        // A stored fingerprint that no longer matches means the provisioning
+        // commands (install/update/run, including launch args in runCmd) changed.
         const cmdChanged = e.cmdFingerprint !== undefined && e.cmdFingerprint !== currentFp;
         if (versionChanged || cmdChanged) {
           const reason = versionChanged
