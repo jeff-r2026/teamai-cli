@@ -345,9 +345,35 @@ export async function reportUsageToTeam(
       const { ensureReportsWorktree } = await import('./utils/reports-branch.js');
       writeRoot = await ensureReportsWorktree(selfConfig);
     } else {
-      // Reset any dirty/conflicted state and ensure we're on the default branch before pulling.
-      // Same pattern as push.ts — the team repo is a cache, safe to discard local state.
+      // The team repo is a disposable cache clone here — safe to discard local state
+      // and reset to the default branch before pulling (same pattern as push.ts).
+      //
+      // Defense-in-depth: this whole else-branch assumes repoPath is a dedicated clone
+      // ROOT. If it is not the git top level (e.g. a self-mode `<root>/.teamai` dir that
+      // slipped through without selfConfig), then reset --hard, checkout, AND the
+      // stats commit/push below would all act on the user's business repo — wiping the
+      // working tree and pushing a spurious commit on their branch. In that case bail
+      // out entirely: there is no safe cache root to report into.
       const git = createGit(repoPath);
+      let isDedicatedRoot = false;
+      try {
+        const { realpath } = await import('node:fs/promises');
+        const toplevel = (await git.revparse(['--show-toplevel'])).trim();
+        // Resolve symlinks on both sides before comparing: git reports the real
+        // path, while repoPath may arrive through a symlinked prefix (e.g. macOS
+        // /tmp -> /private/tmp), which path.resolve alone would not reconcile.
+        const [realTop, realRepo] = await Promise.all([realpath(toplevel), realpath(repoPath)]);
+        isDedicatedRoot = realTop === realRepo;
+      } catch {
+        // Not inside a git repo at all (or realpath/revparse unavailable) — treat as
+        // a plain cache dir and preserve the historical behavior. Ambiguous errors
+        // favor the historical reset path rather than silently doing nothing.
+        isDedicatedRoot = true;
+      }
+      if (!isDedicatedRoot) {
+        log.debug(`Skipping report: ${repoPath} is not a dedicated team-repo root (self-mode safety guard)`);
+        return;
+      }
       await resetToCleanMaster(git, repoPath);
       await pullRepo(repoPath);
     }

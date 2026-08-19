@@ -1245,7 +1245,13 @@ export async function pull(options: GlobalOptions): Promise<void> {
         targets.push({
           repoPath: activeUserConfig.repo.localPath,
           username: activeUserConfig.username,
-          opts: { skipTruncate: true, excludeProjectRoots: projectConfig?.projectRoot ? [projectConfig.projectRoot] : [] },
+          opts: {
+            skipTruncate: true,
+            excludeProjectRoots: projectConfig?.projectRoot ? [projectConfig.projectRoot] : [],
+            // Self mode routes stats/votes to the teamai-reports orphan branch —
+            // never reset/pull the business repo working tree.
+            ...(activeUserConfig.repo.kind === 'self' ? { selfConfig: activeUserConfig } : {}),
+          },
         });
       }
 
